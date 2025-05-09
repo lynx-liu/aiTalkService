@@ -1,28 +1,29 @@
 #include "videoWorkpool.h"
 
-videoWorkpool::videoWorkpool(CONFIG config_):
+videoWorkpool::videoWorkpool(CONFIG config_, uint8_t BCDSIMLength, int threNum):
 _config(config_),
 event_num(0)
 {
     taskmempoolptr = nullptr;
+    init_threadpool2(BCDSIMLength, threNum);
 }
 
 videoWorkpool::~videoWorkpool()
 {
-    if(nullptr != taskmempoolptr){
+    if(taskmempoolptr){
         delete taskmempoolptr;
         taskmempoolptr = nullptr;
     }
     exit_queue2();
 }
 
-void videoWorkpool::init_threadpool2(int threadNum)
+void videoWorkpool::init_threadpool2(uint8_t BCDSIMLength, int threadNum)
 {
     live_thr_num = 0;
     busy_thr_num = 0;
-    taskmempoolptr = new taskmempool(_config, 150);
+    taskmempoolptr = new taskmempool(_config, BCDSIMLength, 50);
+    if(!taskmempoolptr) printf("%s:%s:%d new taskmempool == nullptr\n",__FILE__,__FUNCTION__,__LINE__);
     
-
     create_work2();
     for(int i = 0; i< threadNum; i++){
         create_task2();
@@ -42,7 +43,7 @@ void videoWorkpool::add_device_detonate_event2(int fd)
 void videoWorkpool::create_work2()
 {
     if(pthread_create(&pid2,NULL,_work_thread2,this)!=0){
-        // LOG(INFO)<< "create work thread fail";
+        printf("create work thread fail\n");
         exit(1);
     }
 }
@@ -51,7 +52,7 @@ bool videoWorkpool::create_task2()
 {
     pthread_t task_pid;
     if(pthread_create(&task_pid,NULL,_task_thread2,this)!=0){
-        // LOG(INFO)<< "create task thread fail";
+        printf("create task thread fail\n");
         return false;
     }
     add_live_thread_num();
@@ -61,12 +62,10 @@ bool videoWorkpool::create_task2()
 void videoWorkpool::exit_queue2()
 {
     int size = 0;
-    Task* _task;
     event_mutex2.mutex_lock();
     size = event_queue2.size();
     for(int i = 0; i< size; i++){
-        _task = nullptr;
-        _task = event_queue2.front();
+        Task* _task = event_queue2.front();
         event_queue2.pop();
         event_num--;
         delete _task;

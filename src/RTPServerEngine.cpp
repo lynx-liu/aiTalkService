@@ -1,11 +1,13 @@
 #include "RTPServerEngine.h"
 using namespace Cnvt;
 
-CRTPServerEngine::CRTPServerEngine(const CONFIG ServerConfig, int fd)
+CRTPServerEngine::CRTPServerEngine(const CONFIG ServerConfig, uint8_t BCDSIMLength)
 {
 	UrlKey = ServerConfig.UrlKey;
 	urlDNS.clear();
 	urlDNS = ServerConfig.urlDNS;
+	m_BCDSIMLength = BCDSIMLength;
+	m_HeadLen = sizeof(PACKET_HEAD)-sizeof(((PACKET_HEAD*)0)->BCDSIMCardNumber)+m_BCDSIMLength;
 	                       
 	start_init();
 }
@@ -48,9 +50,6 @@ void CRTPServerEngine::start_init()
 	CsockFd = 0;
 
 	talkStatus = TALK_STATUS_FIST;
-	// sharTalkdataPtr = nullptr;
-	// sharTalkdataPtr = new SHAR_TALK_DATA_TYPE();
-
 	_sharTalkstrue = new SharTalkAudio();
 }
 
@@ -81,10 +80,7 @@ void CRTPServerEngine::close_and_free()
 		delete dataStructPtr;
 		dataStructPtr = nullptr;
 	}
-	// if(sharTalkdataPtr){
-	// 	delete sharTalkdataPtr;
-	// 	sharTalkdataPtr = nullptr;
-	// }
+
 	if(_sharTalkstrue){
 		delete _sharTalkstrue;
 		_sharTalkstrue = nullptr;
@@ -123,15 +119,12 @@ void CRTPServerEngine::reInit()
 
 	talkStatus = TALK_STATUS_FIST;
 	memset(audioPtr,0, AUDIO_BUFF_SIZE);
-	pTemp = nullptr;
-	pTemp2 = nullptr;
-	pTemp3 = nullptr;
 
-	if (_sharTalkstrue) _sharTalkstrue->reint();
+	if (_sharTalkstrue) _sharTalkstrue->reint();/*
 	if(!m_BCDSIMStr.empty()){
 		del_audio_type_info(m_BCDSIMStr);
 		m_BCDSIMStr.clear();
-	}
+	}*/
 	
 }
 
@@ -242,10 +235,10 @@ bool CRTPServerEngine::ReadAndAnalyzeRTPPack()
 			if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR){
 				return true;
 			}
-			// LOG(INFO)<<"*************exit******************";
+			// printf("*************exit******************\n");
 			return false;
 		}else if(0 == RreadReturnLen) {
-			// LOG(INFO)<<"*************设备主动断开连接(通道):"<<m_BCDChanStr;                                                                 
+			// printf("*************设备主动断开连接(通道):\n");                                                                 
 			return false;
 		}
 
@@ -260,15 +253,14 @@ size_t CRTPServerEngine::ReadPackLen_g()
 {
 	size_t RecvLen = 0;
 	if(nullptr == RecvRtpPackStr) {
-		// LOG(ERROR) << "nullptr == RecvRtpPackStr";
 		return false;
 	}  
 
 	if(PackStatus_ == _PKG_HD_INIT){
 		if(PackHeadLen_ == 0){
-			RecvLen = 20;
-		}else if(0 < PackHeadLen_ < 20){
-			RecvLen = 20 - PackHeadLen_;
+			RecvLen = m_HeadLen;
+		}else if(0 < PackHeadLen_ < m_HeadLen){
+			RecvLen = m_HeadLen - PackHeadLen_;
 		}
 		read_packHead_ptr();
 	}else if(PackStatus_ == _PKG_HD_REMAINING_INIT_1 && DataType4_ == DATA_TYPE_AUDIO){   //读取头剩余尾部
@@ -360,7 +352,7 @@ bool CRTPServerEngine::videAudioManage()
 		dataStructPtr->memsize = memsize;
 		dataStructPtr->WdBodyLen = _size;
 		// printf("********************* %02X\n", DataType4_);
-		// if(!sendDataV3()) return false;   //发送视频
+		if(!sendDataV3()) return false;   //发送视频
 		memset(_memptr, 0, memsize);
 		_size = 0;
 	}
@@ -387,7 +379,7 @@ bool CRTPServerEngine::push_aduio_data()
 	dataStructPtr->WdBodyLen = WdBodyLen_;
 	// if(!send_talk_Audio()) return false;
 	if(!send_talk_Audio2()) return false;
-	// printf("============channel_ = %02X,RecvRtpPackStr->PKG_HEADER.PT7 = %#02X, WdBodyLen_ = %d\n",channel_,RecvRtpPackStr->PKG_HEADER.PT7, WdBodyLen_);
+	//printf("============channel_ = %02X,RecvRtpPackStr->PKG_HEADER.PT7 = %02X, WdBodyLen_ = %d\n",channel_,RecvRtpPackStr->PKG_HEADER.PT7, WdBodyLen_);
 	memset(audioPtr,0, AUDIO_BUFF_SIZE);
 	return true;
 }
@@ -429,8 +421,8 @@ bool CRTPServerEngine::insert_talk_info()
 {
 	_BYTE audi_type = RecvRtpPackStr->PKG_HEADER.PT7;
 	memset(&audioInfo, 0, sizeof(audioType));
-	memcpy(audioInfo.BCDSIMCardNumber, RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber, 10);
-	audioInfo.BCDSIMLen = 10;
+	memcpy(audioInfo.BCDSIMCardNumber, RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber, m_BCDSIMLength);
+	audioInfo.BCDSIMLen = m_BCDSIMLength;
 	audioInfo.ChannelNumber = channel_;
 	audioInfo.socketFd = CsockFd;
 	if(audi_type == LOAD_TYPE_G711A) {
@@ -472,9 +464,9 @@ void CRTPServerEngine::read_data_body()
 void CRTPServerEngine::get_device_SIM_()
 {
 	memset(m_BCDSIMCard, 0, sizeof(m_BCDSIMCard));
-	memcpy(m_BCDSIMCard, RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber, 10);
+	memcpy(m_BCDSIMCard, RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber, m_BCDSIMLength);
 	m_BCDSIMStr.clear();
-	for(int i = 0; i<10; i++){
+	for(int i = 0; i<m_BCDSIMLength; i++){
 		memset(m_TempBCDCard_t, 0, sizeof(m_TempBCDCard_t));
 		sprintf( m_TempBCDCard_t, "%02X", m_BCDSIMCard[i] );
 		m_BCDSIMStr += m_TempBCDCard_t;
@@ -492,38 +484,17 @@ void CRTPServerEngine::get_device_SIM_()
 }
 
 
-// //添加共享对讲包头
-// void CRTPServerEngine::add_sharTalkHeadDataType()
-// {
-// 	if (sharTalkdataPtr){
-// 		memset(sharTalkdataPtr, 0, sizeof(SHAR_TALK_DATA_TYPE));
-// 		memcpy(sharTalkdataPtr->PackHead, RecvRtpPackStr->HeadPack, 8);
-// 		// memcpy(sharTalkdataPtr->PackAfter, RecvRtpPackStr->HeadPack + 18, 2);   //粤标SIM为10字节
-// 		sharTalkdataPtr->PackHeadLen = 8;
-// 	}
-// }
-//添加包尾字节
-// void CRTPServerEngine::add_sharTalkAfterDataType()
-// {
-// 	if (sharTalkdataPtr){
-// 		memcpy(sharTalkdataPtr->PackAfter, RecvRtpPackStr->HeadAfter, 10);
-// 		sharTalkdataPtr->packAfterLen = 10;
-// 	}
-// }
-
-
 //解析头
 void CRTPServerEngine::head_analysis_()
 {
 	PackHeadLen_ += RreadReturnLen;
-	if(PackHeadLen_ == 20){
-		AnalyzeHead_16_g(RecvRtpPackStr->HeadPack,  PackHeadLen_);
+	if(PackHeadLen_ == m_HeadLen){
+		AnalyzeHead(RecvRtpPackStr->HeadPack,  PackHeadLen_);
 		if(DataType4_ == 0x03) PackStatus_ = _PKG_HD_REMAINING_INIT_1;
 		else if(DataType4_ == 0x04) PackStatus_ = _PKG_HD_REMAINING_INIT_2;
 		else if(DataType4_ == 0x00 || DataType4_ == 0x01 || DataType4_ == 0x02) PackStatus_ = _PKG_HD_REMAINING_INIT_3;
 		else PackStatus_ = _PKG_HD_REMAINING_INIT_ERR;
 		PackHeadLen_ = 0;
-		// add_sharTalkHeadDataType();
 	}
 }
 
@@ -535,7 +506,6 @@ void CRTPServerEngine::head_audio_analysis_()
 		AnalyzeHeadAudioEnd_10_g(RecvRtpPackStr->HeadAfter);
 		PackStatus_ = _PKG_HD__REMAINING_RECVING;
 		PackHeadLen_ = 0;
-		// add_sharTalkAfterDataType();
 	}
 }
 
@@ -564,47 +534,27 @@ void CRTPServerEngine::head_video_analysis_()
 }
 
 
-bool CRTPServerEngine::AnalyzeHead_16_g(const unsigned char* HeadPack16, const int& headLen)
+bool CRTPServerEngine::AnalyzeHead(const unsigned char* headPack, const int& headLen)
 {
-	memset(tmpHeadPack16, 0, headLen);
-	memcpy(tmpHeadPack16, HeadPack16, headLen);
-	printf("----------------pHeader-----------------\n");
-	for (int i = 0;i<20;++i)
-	{
-		printf(" %02X",tmpHeadPack16[i]);
-	}
-	printf("\n");
-
-	pTemp = nullptr;
-	pTemp = (PACKET_HEAD_16*)tmpHeadPack16;
-	RecvRtpPackStr->PKG_HEADER.DWFramHeadMark = pTemp->DWFramHeadMark;
+	RecvRtpPackStr->PKG_HEADER.DWFramHeadMark = ((PACKET_HEAD*)headPack)->DWFramHeadMark;
 	RecvRtpPackStr->PKG_HEADER.DWFramHeadMark = (RecvRtpPackStr->PKG_HEADER.DWFramHeadMark<<24)|
 		(RecvRtpPackStr->PKG_HEADER.DWFramHeadMark&0x0000FF00)<<8|
 		(RecvRtpPackStr->PKG_HEADER.DWFramHeadMark&0x00FF0000)>>8|
 		(RecvRtpPackStr->PKG_HEADER.DWFramHeadMark)>>24;
-	RecvRtpPackStr->PKG_HEADER.V2 = (HeadPack16[4]>>6) & 0x03;
-	RecvRtpPackStr->PKG_HEADER.P1 = (HeadPack16[4]>>5) & 0x01;
-	RecvRtpPackStr->PKG_HEADER.X1 = (HeadPack16[4]>>4) & 0x01;
-	RecvRtpPackStr->PKG_HEADER.CC4 = HeadPack16[4]&0x0f;
-	RecvRtpPackStr->PKG_HEADER.M1 = (HeadPack16[5]>>7) & 0x01;
-	RecvRtpPackStr->PKG_HEADER.PT7 = HeadPack16[5] & 0x7F;
-	RecvRtpPackStr->PKG_HEADER.WdPackageSequence = ntohs(pTemp->WdPackageSequence);
-	RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber[0] = HeadPack16[8];
-	RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber[1] = HeadPack16[9];
-	RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber[2] = HeadPack16[10];
-	RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber[3] = HeadPack16[11];
-	RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber[4] = HeadPack16[12];
-	RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber[5] = HeadPack16[13];
-	RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber[6] = HeadPack16[14];
-	RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber[7] = HeadPack16[15];
-	RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber[8] = HeadPack16[16];
-	RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber[9] = HeadPack16[17];
-	RecvRtpPackStr->PKG_HEADER.Bt1LogicChannelNumber = HeadPack16[18];
-	RecvRtpPackStr->PKG_HEADER.DataType4 = (HeadPack16[19]>>4)&0x0F;
-	RecvRtpPackStr->PKG_HEADER.subpackageHandleMark4 = HeadPack16[19]&0x0F;
+	RecvRtpPackStr->PKG_HEADER.V2 = (headPack[4]>>6) & 0x03;
+	RecvRtpPackStr->PKG_HEADER.P1 = (headPack[4]>>5) & 0x01;
+	RecvRtpPackStr->PKG_HEADER.X1 = (headPack[4]>>4) & 0x01;
+	RecvRtpPackStr->PKG_HEADER.CC4 = headPack[4]&0x0f;
+	RecvRtpPackStr->PKG_HEADER.M1 = (headPack[5]>>7) & 0x01;
+	RecvRtpPackStr->PKG_HEADER.PT7 = headPack[5] & 0x7F;
+	RecvRtpPackStr->PKG_HEADER.WdPackageSequence = ntohs(((PACKET_HEAD*)headPack)->WdPackageSequence);
+	memcpy(RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber, &headPack[8], m_BCDSIMLength);
 
-	// dataType4  = (HeadPack16[19]>>4)&0x0F;
-	DataType4_ = (HeadPack16[19]>>4)&0x0F;
+	RecvRtpPackStr->PKG_HEADER.Bt1LogicChannelNumber = headPack[8+m_BCDSIMLength];
+	RecvRtpPackStr->PKG_HEADER.DataType4 = (headPack[9+m_BCDSIMLength]>>4)&0x0F;
+	RecvRtpPackStr->PKG_HEADER.subpackageHandleMark4 = headPack[9+m_BCDSIMLength]&0x0F;
+
+	DataType4_ = RecvRtpPackStr->PKG_HEADER.DataType4;
 	/*	printf("----------------after-----------------\n");
 	    printf("DWFramHeadMark = %X\n",RecvRtpPackStr->PKG_HEADER.DWFramHeadMark);
 	    printf("V2 = %X\n",RecvRtpPackStr->PKG_HEADER.V2);
@@ -632,9 +582,7 @@ bool CRTPServerEngine::AnalyzeHead_16_g(const unsigned char* HeadPack16, const i
 //数据类型为0x00 0x01 0x02 时解析包头
 void CRTPServerEngine::AnalyzeHeadVideoEnd_14_g(const unsigned char* HeadPackEnd14)
 {
-	pTemp2 = nullptr;
-	pTemp2 = (PACKET_HEAD_14*)HeadPackEnd14;
-	RecvRtpPackStr->PKG_HEADER.Bt8timeStamp = pTemp2->Bt8timeStamp;
+	RecvRtpPackStr->PKG_HEADER.Bt8timeStamp = ((PACKET_HEAD_14*)HeadPackEnd14)->Bt8timeStamp;
 	RecvRtpPackStr->PKG_HEADER.Bt8timeStamp = (RecvRtpPackStr->PKG_HEADER.Bt8timeStamp<<56) |
 		(RecvRtpPackStr->PKG_HEADER.Bt8timeStamp&0x000000000000FF00)<<40 |
 		(RecvRtpPackStr->PKG_HEADER.Bt8timeStamp&0x0000000000FF0000)<<24 |
@@ -647,24 +595,15 @@ void CRTPServerEngine::AnalyzeHeadVideoEnd_14_g(const unsigned char* HeadPackEnd
 	RecvRtpPackStr->PKG_HEADER.WdLastFrameInterval = (HeadPackEnd14[10]<<8)|HeadPackEnd14[11];
 	RecvRtpPackStr->PKG_HEADER.WdBodyLen = HeadPackEnd14[12]<<8|HeadPackEnd14[13];
 
-	WdBodyLen_  = 0;
-	WdBodyLen_  = HeadPackEnd14[12]<<8|HeadPackEnd14[13];
-
-	_timeStamp = 0;
-	Bt8timeStamp = 0;
-
+	WdBodyLen_ = HeadPackEnd14[12]<<8|HeadPackEnd14[13];
 	Bt8timeStamp = RecvRtpPackStr->PKG_HEADER.Bt8timeStamp;
 	_timeStamp = RecvRtpPackStr->PKG_HEADER.WdLastFrameInterval;
-	// printf("WdBodyLen = %X\n",RecvRtpPackStr->PKG_HEADER.WdBodyLen);
-	// printf("*************** Bt8timeStamp = %ld\n", Bt8timeStamp);
 }
 
 //数据类型为0x03时解析包头后10位;   (音频包)
 void CRTPServerEngine::AnalyzeHeadAudioEnd_10_g(const unsigned char* HeaPaAudioEnd10)
 {
-	pTemp3 = nullptr;
-	pTemp3 = (PACKET_HEAD_10*)HeaPaAudioEnd10;
-	RecvRtpPackStr->PKG_HEADER.Bt8timeStamp = pTemp3->Bt8timeStamp;
+	RecvRtpPackStr->PKG_HEADER.Bt8timeStamp = ((PACKET_HEAD_10*)HeaPaAudioEnd10)->Bt8timeStamp;
 	RecvRtpPackStr->PKG_HEADER.Bt8timeStamp = (RecvRtpPackStr->PKG_HEADER.Bt8timeStamp<<56) |
 		(RecvRtpPackStr->PKG_HEADER.Bt8timeStamp&0x000000000000FF00)<<40 |
 		(RecvRtpPackStr->PKG_HEADER.Bt8timeStamp&0x0000000000FF0000)<<24 |
@@ -675,21 +614,13 @@ void CRTPServerEngine::AnalyzeHeadAudioEnd_10_g(const unsigned char* HeaPaAudioE
 		(RecvRtpPackStr->PKG_HEADER.Bt8timeStamp&0xFF00000000000000)>>56;
 	RecvRtpPackStr->PKG_HEADER.WdBodyLen = HeaPaAudioEnd10[8]<<8|HeaPaAudioEnd10[9];
 
-	WdBodyLen_  = 0;
-	WdBodyLen_  = HeaPaAudioEnd10[8]<<8|HeaPaAudioEnd10[9];
-
-	// printf("WdBodyLen = %X\n",RecvRtpPackStr->PKG_HEADER.WdBodyLen);
-	// printf("*************** RecvRtpPackStr->PKG_HEADER.Bt8timeStamp = %ld\n", RecvRtpPackStr->PKG_HEADER.Bt8timeStamp);
-	// sharTalkdataPtr->WdBodyLen = HeaPaAudioEnd10[8]<<8|HeaPaAudioEnd10[9];
+	WdBodyLen_ = HeaPaAudioEnd10[8]<<8|HeaPaAudioEnd10[9];
 }
 
 //数据类型为0x04时解析包头后10位;   (透传数据)
 void CRTPServerEngine::AnalyzeTransmissionHeadEnd_2_g(const unsigned char* HeaPaTranEnd2)
 {
-
 	RecvRtpPackStr->PKG_HEADER.WdBodyLen = HeaPaTranEnd2[0]<<8|HeaPaTranEnd2[1];
-
-	WdBodyLen_  = 0;
 	WdBodyLen_  = HeaPaTranEnd2[0]<<8|HeaPaTranEnd2[1];
 }
 

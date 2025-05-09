@@ -3,8 +3,8 @@
 shar_network::shar_network(int gport, CONFIG config_, int threadNum):
 port(gport)
 {
-    workPool_S = nullptr;
-    workPool_S = new videoWorkpool_S(config_, threadNum);
+    workPool = nullptr;
+    workPool = new videoWorkpool(config_, 6, threadNum);
     event = new epoll_event();
     wsockFd = 0;
     epollfd = 0;
@@ -12,9 +12,9 @@ port(gport)
 
 shar_network::~shar_network()
 {
-    if(workPool_S){
-        delete workPool_S;
-        workPool_S = nullptr;
+    if(workPool){
+        delete workPool;
+        workPool = nullptr;
     }
 
     if(event){
@@ -30,10 +30,9 @@ bool shar_network::init_bindAdd_and_listen()
 {
     wsockFd = socket(AF_INET, SOCK_STREAM, 0);
 	if(wsockFd < 0){
-		// LOG(INFO)<< "CREATE SOCKET ERROR!";
+		printf("CREATE SOCKET ERROR!\n");
 		return false;
 	}
-    // setnonblocking(wsockFd);
     SetAddrReuse(wsockFd);
 
     serveraddr.sin_family = AF_INET;
@@ -66,10 +65,10 @@ bool shar_network::SetAddrReuse(const int gSocketFd)
     int val =1;
 	RetSetVal = setsockopt(gSocketFd, SOL_SOCKET, SO_REUSEPORT, &val, sizeof(val));
 	if (0 == RetSetVal){
-		// LOG(INFO) << "SET ADDR REUSE SUCCESS!";
+		printf("SET ADDR REUSE SUCCESS!\n");
 		return true;
 	}else {
-        // LOG(INFO) << "SET ADDR REUSE FAILE!";
+        printf("SET ADDR REUSE FAILE!\n");
 		return false;
 	}
 }
@@ -82,14 +81,14 @@ bool shar_network::start_sharNetwork()
     }
 
     if((epollfd = epoll_create(1024)) < 0){
-		// LOG(INFO) << "WEBSOCKET EPOLL Create Fail.";
+		printf("WEBSOCKET EPOLL Create Fail.\n");
 		close(wsockFd);
 		exit(1);
 	}else perror("WEBSOCKET EPOLL Create ");
 
     addfd(wsockFd, false);
     if(!create_listen()){
-        // LOG(ERROR)<< "create listen pthread fail.";
+        printf("create listen pthread fail.\n");
         close(wsockFd);
         close(epollfd);
         return false;
@@ -135,7 +134,7 @@ bool shar_network::create_listen()
 {
     pthread_t listen_pid;
     if(pthread_create(&listen_pid,NULL,_listen,this)!=0){
-        // LOG(ERROR)<< "websocke server create work thread fail";
+        printf("websocke server create work thread fail\n");
         return false;
     }
     return true;
@@ -169,22 +168,20 @@ void shar_network::run()
             if(fd == wsockFd){
                 _fd = accept(fd, (struct sockaddr *)&clientaddr, &m_clilen);
                 if(_fd < 0){
-                    // LOG(ERROR)<<"accept connect fail (_fd<0).";
+                    printf("accept connect fail (_fd<0).\n");
                     continue;
                 }
                 set_fd_keepalive(_fd);
                 addfd(_fd,true);
-                // LOG(INFO)<< "============= _fd1 = "<< _fd;
-                // printf("============= _fd1 =%d\n", _fd);
+                //printf("accept fd =%d\n", _fd);
             }else if(events[index].events & EPOLLIN){
-                // LOG(INFO)<< "============= _fd2 = "<< fd;
                 // printf("============= _fd2 =%d\n", fd);
 
                 // webpoolObj->append_event(fd);
-                workPool_S->add_device_detonate_event2(fd);
+                workPool->add_device_detonate_event2(fd);
                 epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
             }else if(events[index].events & (EPOLLIN | EPOLLRDHUP)){
-                // LOG(INFO) << "close fd.";
+                printf("close fd.\n");
             }
         }
     }

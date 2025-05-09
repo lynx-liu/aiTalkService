@@ -7,7 +7,7 @@
 class Task
 {
     public:
-        Task(CONFIG config_, int fd);
+        Task(CONFIG config_, uint8_t BCDSIMLength);
         ~Task();
         
         void init_fd(int fd);
@@ -19,7 +19,7 @@ class Task
 class taskmempool
 {
 public:
-    taskmempool(CONFIG config_, int count);
+    taskmempool(CONFIG config_, uint8_t BCDSIMLength, int count);
     ~taskmempool();
     Task* get_memblock(int fd);
     void regression_mempool(Task* task);
@@ -31,41 +31,8 @@ private:
     Task* task;
     Mutex _mutex;
     std::list<Task*> memList;
-    // std::list<Task*>::iterator iter;
 
-    // int num;
-    // int cout;
-    // int input;
+    uint8_t m_BCDSIMLength;
 };
-
-struct epollevent
-{
-    int   fd;
-    int   type;
-    Task* task;
-};
-
-class eventmempool
-{
-public:
-    eventmempool(CONFIG config_, int count);
-    ~eventmempool();
-    epollevent* get_memblock(int fd, bool block, int type_);
-    void regression_mempool(epollevent* eventptr, bool block);
-private:
-    void mempool_init(int memcount);
-    void mempool_release();
-private:
-    Mutex _mutex;
-    CONFIG config;
-    Task*        task;
-    epollevent*  eventptr;
-    taskmempool* taskmempoolptr;
-    std::list<epollevent*> memList;
-
-    // int num;
-    // int cout;
-};
-
 
 #endif

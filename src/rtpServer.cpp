@@ -19,8 +19,7 @@ m_WebSerPort(ServerConfig.wprot)
     events = new epoll_event[EPOLL_EVENTS_MAIX];
 	event = new epoll_event();
 
-	_videoWorkpool = new videoWorkpool(ServerConfig);
-	_videoWorkpool->init_threadpool2(20);
+	_videoWorkpool = new videoWorkpool(ServerConfig, 10, 20);
 
 	sharNetwork = new shar_network(m_WebSerPort, ServerConfig, 20);
 
@@ -196,15 +195,6 @@ int RtpServer::set_fd_block(const int _fd)
 {
 	int _ret = fcntl(_fd, F_SETFL, 0);
 	return _ret;
-}
-
-void RtpServer::reset_oneshot(int fd, epollevent* eventptr_)
-{
-	epoll_event event;
-	// event.data.fd = fd;
-	event.data.ptr = (void*)eventptr_;
-	event.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
-	epoll_ctl(m_epollFd, EPOLL_CTL_MOD, fd, &event);
 }
 
 bool RtpServer::CreateConne()

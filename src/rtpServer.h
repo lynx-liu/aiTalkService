@@ -35,7 +35,6 @@ private:
     bool addfd2(int fd, bool oneshot);
     int setnonblocking_new(const int gSocketFd);
     int set_fd_block(const int _fd);
-    void reset_oneshot(int fd, epollevent* eventptr_);
     void start_init();
 
 private:
@@ -52,25 +51,15 @@ private:
     int    m_ReadSocketFd;
     socklen_t m_clilen;
     struct epoll_event ev;
-    // struct epoll_event events[EPOLL_EVENTS_MAIX];
     struct epoll_event* events;
     struct sockaddr_in clientaddr;
     struct sockaddr_in serveraddr;
     epoll_event* event;
 
-    //webServer
 private:
     int            m_WebSerPort;
     int            websockFd;
-    // Cwebserver*    webSerPtr;
     videoWorkpool* _videoWorkpool;
-    epollevent*    eventptr;
-    // epollevent*    _eventptr;
-    // eventmempool*  eventmempoolptr;
-    // Mutex          event_mutex2;
-    // Cond           cond2;
-    // std::list<epollevent*> event_List2;
-
     shar_network* sharNetwork;
 };
 

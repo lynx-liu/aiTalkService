@@ -57,9 +57,6 @@
 
 #define RAW_AAC_BUFFER_SIZE   3*1024
 
-// #define AUDIO_TYPE_INFO_STATUS_OFF 0
-// #define AUDIO_TYPE_INFO_STATUS_ON 1
-
 #define MEMPOOL_INIT_STATUS_OFF 2
 #define MEMPOOL_INIT_STATUS_ON 3
 #define MEMPTR_SIZE 40*1024
@@ -79,7 +76,7 @@ class Caudio;
 class CRTPServerEngine
 {
 public:
-    CRTPServerEngine(const CONFIG ServerConfig, int fd);
+    CRTPServerEngine(const CONFIG ServerConfig, uint8_t BCDSIMLength);
     ~CRTPServerEngine(); //virtual
     bool ReadAndAnalyzeRTPPack();
     void close_and_free();
@@ -89,7 +86,7 @@ public:
 private:
     size_t ReadPackLen_g();
     bool RecvSocketFdDataPacket_g();
-    bool AnalyzeHead_16_g(const unsigned char* HeadPack16, const int& headLen);
+    bool AnalyzeHead(const unsigned char* headPack, const int& headLen);
     void AnalyzeHeadVideoEnd_14_g(const unsigned char* HeadPackEnd14);
     void AnalyzeHeadAudioEnd_10_g(const unsigned char* HeaPaAudioEnd10);
     void AnalyzeTransmissionHeadEnd_2_g(const unsigned char* HeaPaTranEnd2);
@@ -117,8 +114,6 @@ private:
     bool insert_talk_info();
     bool push_aduio_data();
 
-    void add_sharTalkHeadDataType();
-    void add_sharTalkAfterDataType();
     bool send_talk_Audio2();
 
 private:
@@ -127,7 +122,6 @@ private:
     string UrlKey;
     ssize_t           RreadReturnLen;
     SAVER_RECV_DATA*  RecvRtpPackStr;
-    unsigned char     tmpHeadPack16[21];
     std::string       RetTime_t;
 	std::string       txSecret;
 	std::string       EncryStr;
@@ -139,7 +133,9 @@ private:
     unsigned char     channel_;
     int               SIMStatus;
     int               status;
-    _BYTE*           _memptr;
+    _BYTE*            _memptr;
+    uint8_t           m_BCDSIMLength;
+    uint16_t          m_HeadLen;
     
 
 private:
@@ -158,9 +154,6 @@ private:
     unsigned short WdBodyLen_;
     _BYTE* dataPtr;
     _BYTE* audioPtr;
-    PACKET_HEAD_16* pTemp;
-    PACKET_HEAD_14* pTemp2;
-    PACKET_HEAD_10* pTemp3;
     unsigned long  Bt8timeStamp;
     unsigned short _timeStamp;
     SEND_VIDEO_INFO_STRU AddToListData;
@@ -168,24 +161,19 @@ private:
     
     int talkStatus;
     audioType audioInfo;
-    // SHAR_TALK_DATA_TYPE* sharTalkdataPtr;
     SharTalkAudio* _sharTalkstrue;
 };
 
 
 inline void CRTPServerEngine::read_packHead_ptr()
 {
-	dataPtr= nullptr;
 	dataPtr = RecvRtpPackStr->HeadPack + PackHeadLen_;
 }
 
 inline void CRTPServerEngine::read_packHeadAfter_ptr()
 {
-	dataPtr= nullptr;
 	dataPtr = RecvRtpPackStr->HeadAfter + PackHeadLen_;
 }
-
-
 
 extern bool add_audio_type_info(std::string sim,audioType AudtypeInfo);
 extern void del_audio_type_info(std::string sim);

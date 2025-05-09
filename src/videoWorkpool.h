@@ -8,12 +8,12 @@
 class videoWorkpool
 {
 public:
-    videoWorkpool(CONFIG config_);
+    videoWorkpool(CONFIG config_, uint8_t BCDSIMLength, int threNum);
     ~videoWorkpool();
-    void init_threadpool2(int threadNum);
     void add_device_detonate_event2(int fd);
 
 private:
+    void init_threadpool2(uint8_t BCDSIMLength, int threadNum);
     void create_work2();
     bool create_task2();
     static void* _work_thread2(void* This);
@@ -27,6 +27,7 @@ private:
     void task_run();
     void add_to_queue2(Task*);
     void exit_queue2();
+
 private:
     CONFIG          _config;
     int             event_num;

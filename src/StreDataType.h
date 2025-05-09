@@ -100,10 +100,7 @@ struct  RTPpacket{
 #pragma pack (1)
 typedef struct _RTP_PKG_HEADER
 {
-//    unsigned short pkgLen;              //报文总长度--2字节
-//    unsigned short msgCode;             //消息类型代码--2字节,用于区别每个不同的命令
-//    int            crc32;               //CRC32效验--4字节,为了防止收发数据中出现收到内容和发送内容不一致的情况
-    unsigned            DWFramHeadMark;          //帧头标识
+    uint32_t            DWFramHeadMark;          //帧头标识
     unsigned char       V2:2;                    //固定为2
     unsigned char       P1:1;                    //固定为0
     unsigned char       X1:1;                    //RTP头是否需要扩展位，固定为0
@@ -121,14 +118,9 @@ typedef struct _RTP_PKG_HEADER
     unsigned short      WdBodyLen;                 //数据体长度
 
 }RTP_PKG_HEADER,*PRTP_PKG_HEADER;
-#pragma pack()
 
-#pragma pack (1)
 typedef struct _RTP_PKG_HEADER_SIM6
 {
-//    unsigned short pkgLen;              //报文总长度--2字节
-//    unsigned short msgCode;             //消息类型代码--2字节,用于区别每个不同的命令
-//    int            crc32;               //CRC32效验--4字节,为了防止收发数据中出现收到内容和发送内容不一致的情况
     unsigned            DWFramHeadMark;          //帧头标识
     unsigned char       V2:2;                    //固定为2
     unsigned char       P1:1;                    //固定为0
@@ -147,13 +139,8 @@ typedef struct _RTP_PKG_HEADER_SIM6
     unsigned short      WdBodyLen;                 //数据体长度
 
 }RTP_PKG_HEADER_SIM6,*PRTP_PKG_HEADER_SIM6;
-#pragma pack()
 
-/***************************************
- 结构类型说明：16字节包头结构体
- **************************************/
-//#pragma pack (1)
-typedef struct _RTP_PACKET_HEAD_16
+typedef struct _RTP_PACKET_HEAD
 {
     unsigned            DWFramHeadMark;          //帧头标识
     unsigned char       V2:2;                    //固定为2
@@ -167,26 +154,7 @@ typedef struct _RTP_PACKET_HEAD_16
     unsigned char       Bt1LogicChannelNumber;     //逻辑通道号
     unsigned char       DataType4:4;                //数据类型
     unsigned char       subpackageHandleMark4:4;    //分包处理标记
-}PACKET_HEAD_16;
-//#pragma pack()
-
-
-#pragma pack (1)
-typedef struct _RTP_PACKET_HEAD_SIM6
-{
-    unsigned            DWFramHeadMark;          //帧头标识
-    unsigned char       V2:2;                    //固定为2
-    unsigned char       P1:1;                    //固定为0
-    unsigned char       X1:1;                    //RTP头是否需要扩展位，固定为0
-    unsigned char       CC4:4;                   //固定为1
-    unsigned char       M1:1;                    //标志位，确定是否是完整数据帧的边界
-    unsigned char       PT7:7;                      //负载类型
-    unsigned short      WdPackageSequence;           //RTP数据包序号每发送一个RTP数据包序列号加1
-    unsigned char       BCDSIMCardNumber[6];       //SIM卡号
-    unsigned char       Bt1LogicChannelNumber;     //逻辑通道号
-    unsigned char       DataType4:4;                //数据类型
-    unsigned char       subpackageHandleMark4:4;    //分包处理标记
-}PACKET_HEAD_SIM6;
+}PACKET_HEAD;
 #pragma pack()
 
 /***************************************
