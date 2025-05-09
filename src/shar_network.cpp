@@ -1,10 +1,10 @@
 #include "shar_network.h"
+#define BCDSIMLenght    6
 
-shar_network::shar_network(int gport, CONFIG config_, int threadNum):
-port(gport)
+shar_network::shar_network(CONFIG config_, int threadNum):
+port(config_.port)
 {
-    workPool = nullptr;
-    workPool = new videoWorkpool(config_, 6, threadNum);
+    workPool = new videoWorkpool(config_, BCDSIMLenght, threadNum);
     event = new epoll_event();
     wsockFd = 0;
     epollfd = 0;
@@ -58,9 +58,8 @@ int shar_network::setnonblocking(const int gSocketFd)
 
 bool shar_network::SetAddrReuse(const int gSocketFd)
 {
-	int RetSetVal;
 	int bReuseaddr=SO_REUSEADDR;
-	RetSetVal = setsockopt(gSocketFd,SOL_SOCKET ,SO_REUSEADDR,(const char*)&bReuseaddr,sizeof(bReuseaddr));
+	int RetSetVal = setsockopt(gSocketFd,SOL_SOCKET ,SO_REUSEADDR,(const char*)&bReuseaddr,sizeof(bReuseaddr));
 
     int val =1;
 	RetSetVal = setsockopt(gSocketFd, SOL_SOCKET, SO_REUSEPORT, &val, sizeof(val));
@@ -83,16 +82,14 @@ bool shar_network::start_sharNetwork()
     if((epollfd = epoll_create(1024)) < 0){
 		printf("WEBSOCKET EPOLL Create Fail.\n");
 		close(wsockFd);
-		exit(1);
+		return false;
 	}else perror("WEBSOCKET EPOLL Create ");
 
     addfd(wsockFd, false);
-    if(!create_listen()){
-        printf("create listen pthread fail.\n");
-        close(wsockFd);
-        close(epollfd);
-        return false;
-    }
+    run();
+
+    close(wsockFd);
+    close(epollfd);
     return true;
 }
 
@@ -128,25 +125,6 @@ void shar_network::set_fd_keepalive(int fd)
     setsockopt(fd, IPPROTO_TCP, 18, &timeout, sizeof(timeout));
     //setsockopt(socket_fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &timeout, sizeof(timeout));
 	//设置TCP_USER_TIMEOUT参数来判断tcp连接是否断开
-}
-
-bool shar_network::create_listen()
-{
-    pthread_t listen_pid;
-    if(pthread_create(&listen_pid,NULL,_listen,this)!=0){
-        printf("websocke server create work thread fail\n");
-        return false;
-    }
-    return true;
-}
-
-void* shar_network::_listen(void* arg)
-{
-    pthread_detach(pthread_self());
-    shar_network* _this = (shar_network*)arg;
-
-    _this->run();
-    pthread_exit(NULL);
 }
 
 void shar_network::run()

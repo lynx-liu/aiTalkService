@@ -10,7 +10,7 @@
 class shar_network
 {
 public:
-    shar_network(int gport, CONFIG config_, int threadNum);
+    shar_network(CONFIG config_, int threadNum);
     ~shar_network();
     bool start_sharNetwork();
 
@@ -20,8 +20,6 @@ private:
     bool SetAddrReuse(const int gSocketFd);
     bool addfd(int fd, bool oneshot);
     void set_fd_keepalive(int fd);
-    bool create_listen();
-    static void* _listen(void* arg);
     void run();
 private:
     int port;

@@ -164,7 +164,6 @@ void videoWorkpool::task_run()
         cond2.wait();
         decrease_live_thread_num();
 
-        task = nullptr;
         task = get_device_detonate_event2();
         if(task){
             if(task->run()){

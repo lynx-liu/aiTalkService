@@ -57,7 +57,6 @@ void taskmempool::mempool_init(int memcount)
 
 Task* taskmempool::get_memblock(int fd)
 {
-    task = nullptr;
     _mutex.mutex_lock();
     if(!memList.empty()){
         task = memList.front();

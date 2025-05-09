@@ -1,5 +1,5 @@
-#include "rtpServer.h"
 #include <signal.h>
+#include "shar_network.h"
 
 CONFIG ServerConfig;
 int main(int argc, char* argv[])
@@ -8,8 +8,8 @@ int main(int argc, char* argv[])
 
     signal(SIGPIPE, SIG_IGN);
 
-    shared_ptr<RtpServer> _RtpServer = make_shared<RtpServer>(ServerConfig);
-    _RtpServer->StartRTPServer_new();
+    shared_ptr<shar_network>  sharNetwork = make_shared<shar_network>(ServerConfig, 20);
+    sharNetwork->start_sharNetwork();
 
     return 0;
 }

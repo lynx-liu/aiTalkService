@@ -23,11 +23,7 @@ int get_config(CONFIG* cfg)
 				strncpy(s_config.serverip, req->GetText(), sizeof(s_config.serverip) - 1);
  
 				req = config->FirstChildElement("serverport");
-				if(req == NULL || req->QueryIntText(&s_config.prot) != XML_SUCCESS)
-					break;
-
-				req = config->FirstChildElement("webserport");
-				if(req == NULL || req->QueryIntText(&s_config.wprot) != XML_SUCCESS)
+				if(req == NULL || req->QueryIntText(&s_config.port) != XML_SUCCESS)
 					break;
 
 				req = config->FirstChildElement("UrlKey");
@@ -38,10 +34,6 @@ int get_config(CONFIG* cfg)
 				if(req == NULL)
 					break;
 				strncpy(s_config.urlDNS, req->GetText(), sizeof(s_config.urlDNS) - 1);
-
-				req = config->FirstChildElement("httpServerport");
-				if(req == NULL || req->QueryIntText(&s_config.httpserport) != XML_SUCCESS)
-					break;
 
 				load = 1;
 

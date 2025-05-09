@@ -1,7 +1,6 @@
 <config>
 <serverip>192.168.0.85</serverip>
-<serverport>9192</serverport>
-<webserport>9191</webserport>
+<serverport>9191</serverport>
 <UrlKey>2bd8c611ec3498d791595df39669a904</UrlKey>
 <urlDNS>test.livepush.che-mi.net</urlDNS>
 <httpServerport>8000</httpServerport>

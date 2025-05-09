@@ -5,11 +5,9 @@
 typedef struct config
 {   
     char serverip[64];
-    int  prot;
-    int  wprot;
+    int  port;
     char UrlKey[128];
     char urlDNS[128];
-    int  httpserport;
 }CONFIG;
 
 int get_config(CONFIG* cfg);
