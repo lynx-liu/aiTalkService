@@ -79,11 +79,11 @@ bool shar_network::start_sharNetwork()
         return false;
     }
 
-    if((epollfd = epoll_create(1024)) < 0){
-		printf("WEBSOCKET EPOLL Create Fail.\n");
+    if((epollfd = epoll_create(LISTEN_MAXI)) < 0){
+		perror("WEBSOCKET EPOLL Create ");
 		close(wsockFd);
 		return false;
-	}else perror("WEBSOCKET EPOLL Create ");
+	}
 
     addfd(wsockFd, false);
     run();

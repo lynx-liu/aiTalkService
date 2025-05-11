@@ -14,47 +14,6 @@ CRTPServerEngine::CRTPServerEngine(const CONFIG ServerConfig, uint8_t BCDSIMLeng
 
 CRTPServerEngine::~CRTPServerEngine()
 {
-
-}
-
-void CRTPServerEngine::start_init()
-{
-	RecvRtpPackStr = new SAVER_RECV_DATA();
-	RecvRtpPackStr->PackStatus = _PKG_HD_INIT;
-
-	RreadReturnLen   = 0;
-
-	SIMStatus = CREATE_SIM_STATUS_OFF;
-	status = CREATE_AUDIO_STATUS_OFF;
-
-	_memptr = nullptr;
-	memsize = 0;
-	_size = 0;
-	capacity = 0;
-	_getStatus = _NEW_HEAP_STATUS_OFF;
-	mempoolStatus = MEMPOOL_INIT_STATUS_OFF;
-	_memptr = (_BYTE*)malloc(MEMPTR_SIZE);
-	memset(_memptr, 0, MEMPTR_SIZE);
-	memsize = MEMPTR_SIZE;
-	urlInitStatus = RTMP_URL_INIT_STATUS_OFF;
-
-	audioPtr = nullptr;
-	audioPtr = (_BYTE*)malloc(AUDIO_BUFF_SIZE);
-	memset(audioPtr,0, AUDIO_BUFF_SIZE);
-
-	dataStructPtr = nullptr;
-	dataStructPtr = new SEND_VIDEO_INFO_STRU();
-
-	rtmpSendObj = new RtmpSender();
-
-	CsockFd = 0;
-
-	talkStatus = TALK_STATUS_FIST;
-	_sharTalkstrue = new SharTalkAudio();
-}
-
-void CRTPServerEngine::close_and_free()
-{
 	close(CsockFd);
 	if(rtmpSendObj){
 		rtmpSendObj->close_free();
@@ -87,9 +46,35 @@ void CRTPServerEngine::close_and_free()
 	}
 }
 
+void CRTPServerEngine::start_init()
+{
+	RecvRtpPackStr = new SAVER_RECV_DATA();
+	RecvRtpPackStr->PackStatus = _PKG_HD_INIT;
+
+	RreadReturnLen   = 0;
+	SIMStatus = CREATE_SIM_STATUS_OFF;
+
+	_size = 0;
+	_memptr = (uint8_t*)malloc(MEMPTR_SIZE);
+	memset(_memptr, 0, MEMPTR_SIZE);
+	memsize = MEMPTR_SIZE;
+	urlInitStatus = RTMP_URL_INIT_STATUS_OFF;
+
+	audioPtr = (uint8_t*)malloc(AUDIO_BUFF_SIZE);
+	memset(audioPtr,0, AUDIO_BUFF_SIZE);
+
+	dataStructPtr = new SEND_VIDEO_INFO_STRU();
+
+	rtmpSendObj = new RtmpSender();
+
+	CsockFd = 0;
+
+	talkStatus = TALK_STATUS_FIST;
+	_sharTalkstrue = new SharTalkAudio();
+}
+
 void CRTPServerEngine::init(int fd)
 {
-	// if(fd<0) LOG(ERROR)<< "fd < 0 ERROR: fd= "<< fd;
 	CsockFd = fd;
 	PackStatus_ = _PKG_HD_INIT;
 	PackHeadLen_ = 0;
@@ -115,17 +100,15 @@ void CRTPServerEngine::reInit()
 	}
 
 	close(CsockFd);
-	// CsockFd = 0;
 
 	talkStatus = TALK_STATUS_FIST;
 	memset(audioPtr,0, AUDIO_BUFF_SIZE);
 
-	if (_sharTalkstrue) _sharTalkstrue->reint();/*
+	if (_sharTalkstrue) _sharTalkstrue->reint();
 	if(!m_BCDSIMStr.empty()){
 		del_audio_type_info(m_BCDSIMStr);
 		m_BCDSIMStr.clear();
-	}*/
-	
+	}
 }
 
 bool CRTPServerEngine::create_rtmpSendObj()
@@ -377,14 +360,13 @@ bool CRTPServerEngine::push_aduio_data()
 	dataStructPtr->VidePacData = audioPtr;
 	dataStructPtr->memsize = AUDIO_BUFF_SIZE;
 	dataStructPtr->WdBodyLen = WdBodyLen_;
-	// if(!send_talk_Audio()) return false;
-	if(!send_talk_Audio2()) return false;
+	if(!send_talk_Audio()) return false;
 	//printf("============channel_ = %02X,RecvRtpPackStr->PKG_HEADER.PT7 = %02X, WdBodyLen_ = %d\n",channel_,RecvRtpPackStr->PKG_HEADER.PT7, WdBodyLen_);
 	memset(audioPtr,0, AUDIO_BUFF_SIZE);
 	return true;
 }
 
-bool CRTPServerEngine::send_talk_Audio2()
+bool CRTPServerEngine::send_talk_Audio()
 {
 	if(!_sharTalkstrue) return false;
 
@@ -399,32 +381,16 @@ bool CRTPServerEngine::send_talk_Audio2()
 	return true;
 }
 
-// bool CRTPServerEngine::send_talk_Audio()
-// {
-// 	if(!_talkAudio) return false;
-
-// 	if(talkStatus == TALK_STATUS_FIST){
-// 		if(!insert_talk_info()) return false;
-// 		if(!(_talkAudio->init(m_BCDSIMStr, dataStructPtr, RecvRtpPackStr->PKG_HEADER.PT7))){
-// 			del_audio_type_info(m_BCDSIMStr);
-// 			del_audio_connect_info(m_BCDSIMStr);
-// 			return false;
-// 		}
-// 		talkStatus = TALK_STATUS_END;
-// 	}
-
-// 	if(!(_talkAudio->run_pust())) return false;
-// 	return true;
-// }
-
 bool CRTPServerEngine::insert_talk_info()
 {
-	_BYTE audi_type = RecvRtpPackStr->PKG_HEADER.PT7;
+	audioType audioInfo;
 	memset(&audioInfo, 0, sizeof(audioType));
 	memcpy(audioInfo.BCDSIMCardNumber, RecvRtpPackStr->PKG_HEADER.BCDSIMCardNumber, m_BCDSIMLength);
 	audioInfo.BCDSIMLen = m_BCDSIMLength;
 	audioInfo.ChannelNumber = channel_;
 	audioInfo.socketFd = CsockFd;
+
+	uint8_t audi_type = RecvRtpPackStr->PKG_HEADER.PT7;
 	if(audi_type == LOAD_TYPE_G711A) {
 		audioInfo.Tag_PayloadType = 0x86;
 	}else if(audi_type == LOAD_TYPE_ADPCMA){
@@ -445,14 +411,9 @@ bool CRTPServerEngine::insert_talk_info()
 
 void CRTPServerEngine::read_data_body()
 {
-	dataPtr= nullptr;
 	if(DataType4_ != DATA_TYPE_AUDIO && DataType4_ != DATA_TYPE_TRANSM){
 		if((_size + gRecvLen) > memsize){
-			_realptr = nullptr;
-			capacity = _size + gRecvLen + 1;
-			_realptr = (_BYTE*)realloc(_memptr, capacity);
-			_memptr = nullptr;
-			_memptr = _realptr;
+			_memptr = (uint8_t*)realloc(_memptr, _size + gRecvLen + 1);
 			memsize = _size + gRecvLen + 1;
 		}
 		dataPtr = _memptr + _size;

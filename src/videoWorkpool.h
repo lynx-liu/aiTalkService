@@ -23,7 +23,6 @@ private:
     int get_live_thread_num();
     void add_live_thread_num();
     void decrease_live_thread_num();
-    void add_busy_thr_num();
     void task_run();
     void add_to_queue2(Task*);
     void exit_queue2();

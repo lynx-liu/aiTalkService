@@ -9,7 +9,6 @@ Task::Task(CONFIG config_, uint8_t BCDSIMLength)
 Task::~Task()
 {
     if(engine_){
-        engine_->close_and_free();
         delete engine_;
         engine_ = nullptr;
     }
@@ -84,7 +83,6 @@ void taskmempool::mempool_release()
     num = memList.size();
     if(num>0){
         for(int index = 0; index < num; index++){
-            task = nullptr;
             task = memList.front();
             delete task;
             memList.pop_front();

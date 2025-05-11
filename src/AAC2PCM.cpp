@@ -1,9 +1,8 @@
 #include "AAC2PCM.h"
 
 static unsigned char frame[FRAME_MAX_LEN] = {0};
-unsigned int framesize = FRAME_MAX_LEN;
 
-AAC2PCM::AAC2PCM(int gsockfd, unsigned char gchan, BYTE* SIM, int audi_type):
+AAC2PCM::AAC2PCM(int gsockfd, unsigned char gchan, uint8_t* SIM, int audi_type):
 sockfd(gsockfd),
 chan(gchan),
 Audi_type(audi_type)
@@ -14,12 +13,12 @@ Audi_type(audi_type)
 	PCMLen     = 0;
 	m_bInit    = AAC_DEC_INIT_OFF;
 	PCMBuff    = new unsigned char[PCM_BUFF_MAX]();
-	ucOutBuff  = new BYTE[CU_OUT_BUFF_LEN]();
-	G711Buff   = new BYTE[G711_BUFF_LEN]();
-	writebuff  = new BYTE[WRITE_BUFF_SIZE]();
+	ucOutBuff  = new uint8_t[CU_OUT_BUFF_LEN]();
+	G711Buff   = new uint8_t[G711_BUFF_LEN]();
+	writebuff  = new uint8_t[WRITE_BUFF_SIZE]();
 	audiheader = new AUDIO_HEADER();
 	AACDasize = 1024*1024;
-	AACData = new BYTE[AACDasize]();
+	AACData = new uint8_t[AACDasize]();
 	m_nFirstPackageAccDataStatus = AccDataStatus_NotKnown;
     init(LC,8000);
 }
@@ -93,10 +92,9 @@ int AAC2PCM::Decoder(unsigned char* bufferAAC, size_t buf_sizeAAC)
 
 bool AAC2PCM::EncodeG711(int DecodeLen)
 {
-	iRet = 0;
-	iRet = g711a_encode(ucOutBuff, (short*)PCMBuff, DecodeLen / 2);
-	memcpy(G711Buff+G711BUFFLen, ucOutBuff, iRet);
-	G711BUFFLen += iRet;
+	int size = g711a_encode(ucOutBuff, (short*)PCMBuff, DecodeLen / 2);
+	memcpy(G711Buff+G711BUFFLen, ucOutBuff, size);
+	G711BUFFLen += size;
 	send_to_device();
 	return true;
 }

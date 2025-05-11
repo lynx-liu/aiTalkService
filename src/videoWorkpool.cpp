@@ -21,7 +21,7 @@ void videoWorkpool::init_threadpool2(uint8_t BCDSIMLength, int threadNum)
 {
     live_thr_num = 0;
     busy_thr_num = 0;
-    taskmempoolptr = new taskmempool(_config, BCDSIMLength, 50);
+    taskmempoolptr = new taskmempool(_config, BCDSIMLength, 0);
     if(!taskmempoolptr) printf("%s:%s:%d new taskmempool == nullptr\n",__FILE__,__FUNCTION__,__LINE__);
     
     create_work2();
@@ -32,7 +32,6 @@ void videoWorkpool::init_threadpool2(uint8_t BCDSIMLength, int threadNum)
 
 void videoWorkpool::add_device_detonate_event2(int fd)
 {
-    task = nullptr;
     task = taskmempoolptr->get_memblock(fd);
     event_mutex2.mutex_lock();
     event_queue2.push(task);
@@ -168,9 +167,9 @@ void videoWorkpool::task_run()
         if(task){
             if(task->run()){
                 add_to_queue2(task);
-            }else {
+            }/*else {
                 taskmempoolptr->regression_mempool(task);
-            }
+            }*/
         }
 
         add_live_thread_num();

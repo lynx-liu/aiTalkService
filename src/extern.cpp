@@ -45,14 +45,8 @@ bool get_audio_type_info(std::string sim,audioType& audioInfo)
 
 bool get_audio_type_info2(std::map<std::string,  audioType>& _sharType)
 {
-    // mutex1.mutex_lock();
     pthread_mutex_lock(&Audio_Type_Mutex);
-    // for (iter = audiTypeInfo.begin(); iter != audiTypeInfo.end(); ++iter){
-    //     _sharType.insert(pair<std::string, audioType>(iter->first, iter->second));
-    // }
-
     _sharType = audiTypeInfo;
-    // mutex1.mutex_unlock();
     pthread_mutex_unlock(&Audio_Type_Mutex);
     return true;
 }
@@ -60,9 +54,6 @@ bool get_audio_type_info2(std::map<std::string,  audioType>& _sharType)
 void del_audio_type_info(std::string sim)
 {
     pthread_mutex_lock(&Audio_Type_Mutex);
-    // iter = audiTypeInfo.find(sim);
-    // if(iter != audiTypeInfo.end())
-    //     audiTypeInfo.erase(iter);
     audiTypeInfo.erase(sim);
     pthread_mutex_unlock(&Audio_Type_Mutex);
     printf("----------------- delete audio intfo ----------\n");
@@ -75,13 +66,6 @@ void install_deviceID(std::string sim, std::string strID)
 {
     umutex.mutex_lock();
     httpReMap[sim] = strID;
-    umutex.mutex_unlock();
-}
-
-void get_allDeviceID(std::map<std::string, std::string>& deviInfoMap)
-{
-    umutex.mutex_lock();
-    deviInfoMap = httpReMap;
     umutex.mutex_unlock();
 }
 
@@ -124,9 +108,6 @@ int get_audio_connect_info(std::string _sim)
 void del_audio_connect_info(std::string _sim)
 {
     pthread_mutex_lock(&Audio_Conn_Mutex);
-    // _iter = RecAudioConnInfoMap.find(_sim);
-    // if(_iter != RecAudioConnInfoMap.end())
-    //     RecAudioConnInfoMap.erase(_iter);
     RecAudioConnInfoMap.erase(_sim);
     pthread_mutex_unlock(&Audio_Conn_Mutex);
     printf("----------------- delete websocket intfo ----------\n");

@@ -3,7 +3,6 @@
 #include <list>
 #include "RTPServerEngine.h"
 
-// yue1078
 class Task
 {
     public:
@@ -12,7 +11,7 @@ class Task
         
         void init_fd(int fd);
         bool run();
-    // private:
+     private:
         CRTPServerEngine* engine_;
 };
 

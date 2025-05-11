@@ -79,7 +79,6 @@ public:
     CRTPServerEngine(const CONFIG ServerConfig, uint8_t BCDSIMLength);
     ~CRTPServerEngine(); //virtual
     bool ReadAndAnalyzeRTPPack();
-    void close_and_free();
     void init(int fd);
     void reInit();
 
@@ -114,8 +113,6 @@ private:
     bool insert_talk_info();
     bool push_aduio_data();
 
-    bool send_talk_Audio2();
-
 private:
     int  CsockFd;
     string urlDNS;
@@ -132,35 +129,29 @@ private:
     std::string       m_BCDChanStr;   //通道号
     unsigned char     channel_;
     int               SIMStatus;
-    int               status;
-    _BYTE*            _memptr;
+    uint8_t*            _memptr;
     uint8_t           m_BCDSIMLength;
     uint16_t          m_HeadLen;
     
 
 private:
-    int     _getStatus;
     size_t  _size;
-    size_t  capacity;
     size_t  gRecvLen;
-    _BYTE*   _realptr;
-    int        mempoolStatus;
     size_t     memsize;
     int        urlInitStatus;
     RtmpSender* rtmpSendObj;
     int    PackHeadLen_;
     int    PackStatus_;
-    _BYTE  DataType4_;
+    uint8_t  DataType4_;
     unsigned short WdBodyLen_;
-    _BYTE* dataPtr;
-    _BYTE* audioPtr;
+    uint8_t* dataPtr;
+    uint8_t* audioPtr;
     unsigned long  Bt8timeStamp;
     unsigned short _timeStamp;
     SEND_VIDEO_INFO_STRU AddToListData;
     SEND_VIDEO_INFO_STRU* dataStructPtr;
     
     int talkStatus;
-    audioType audioInfo;
     SharTalkAudio* _sharTalkstrue;
 };
 
