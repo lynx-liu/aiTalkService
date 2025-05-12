@@ -11,7 +11,7 @@
 class SharTalkAudio
 {
 public:
-    SharTalkAudio(/* args */);
+    SharTalkAudio(std::string baseUrl);
     ~SharTalkAudio();
 
     bool sharInit(std::string sim, SEND_VIDEO_INFO_STRU* infoPtr, uint8_t loadType);
@@ -23,8 +23,8 @@ private:
     bool audio_decoder();
     bool push_to_device(audioType audioInfo);
     bool write_data(audioType& audioInfo);
-    void add_map();
-    void alter_map(std::string sim);
+    void add_map(const std::string& sim, const std::string& groupId);
+    void alter_map(audioType& audioInfo);
     uint64_t get_timestamp();
     bool isSpeechPresent(const short* pcm, int sampleCount, int threshold = 500);
     
@@ -45,9 +45,10 @@ private:
 
     sharHttpSer* sharHttSer;
     std::string currentSIM;
+    std::string groupID;
 };
 
-extern bool get_audio_type_info2(std::map<std::string,  audioType>& _sharType);
+extern bool get_audio_type_info(std::string sim,audioType& audioInfo);
 extern void del_audio_type_info(std::string sim);
 
 extern void install_deviceID(std::string sim, std::string strID);

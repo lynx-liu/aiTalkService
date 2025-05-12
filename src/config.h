@@ -4,8 +4,8 @@
 #define _CONFIG_H_
 typedef struct config
 {   
-    char serverip[64];
-    int  port;
+    char httpserver[128];
+    int  audioport;
     char UrlKey[128];
     char urlDNS[128];
 }CONFIG;

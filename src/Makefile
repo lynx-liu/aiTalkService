@@ -4,11 +4,11 @@ FLAGS = -lcrypto -lpthread -lavformat -lavcodec -lavutil -lswresample -lcurl -lf
 INCLUDE = -I ../json
 
 talkShar : $(OBJS)
-	@g++ -g -no-pie $^ -o $@ $(INCLUDE) $(FLAGS)
+	@g++ -g $^ -o $@ $(INCLUDE) $(FLAGS)
 	@echo 编译完成...
 
 $(OBJS) : %.o : %.cpp 
-	@g++ -g -c $^ -o $@
+	@g++ -g -std=c++11 -c $^ -o $@
 
 clean:
 	@rm -rf *.o talkShar

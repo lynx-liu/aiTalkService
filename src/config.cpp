@@ -15,15 +15,15 @@ int get_config(CONFIG* cfg)
 			XMLElement* req = NULL;
 
 			do{
-				req = config->FirstChildElement("serverip");
+				req = config->FirstChildElement("httpserver");
 				if(req == NULL) {
-                    printf("get serverip fail!\n");
+                    printf("get httpserver fail!\n");
                     break;
                 }
-				strncpy(s_config.serverip, req->GetText(), sizeof(s_config.serverip) - 1);
+				strncpy(s_config.httpserver, req->GetText(), sizeof(s_config.httpserver) - 1);
  
-				req = config->FirstChildElement("serverport");
-				if(req == NULL || req->QueryIntText(&s_config.port) != XML_SUCCESS)
+				req = config->FirstChildElement("audioport");
+				if(req == NULL || req->QueryIntText(&s_config.audioport) != XML_SUCCESS)
 					break;
 
 				req = config->FirstChildElement("UrlKey");
@@ -40,8 +40,10 @@ int get_config(CONFIG* cfg)
 			} while(0);
 
 		}
-		if(!load)
-			return -1;
+		if(!load) {
+			strncpy(s_config.httpserver, "https://wechat.che-mi.net", sizeof(s_config.httpserver));
+			s_config.audioport = 9191;
+		}
 	}
 	*cfg = s_config;
 	return 0;

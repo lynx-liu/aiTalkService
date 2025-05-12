@@ -3,6 +3,7 @@ using namespace Cnvt;
 
 CRTPServerEngine::CRTPServerEngine(const CONFIG ServerConfig, uint8_t BCDSIMLength)
 {
+	baseUrl = ServerConfig.httpserver;
 	UrlKey = ServerConfig.UrlKey;
 	urlDNS.clear();
 	urlDNS = ServerConfig.urlDNS;
@@ -70,7 +71,7 @@ void CRTPServerEngine::start_init()
 	CsockFd = 0;
 
 	talkStatus = TALK_STATUS_FIST;
-	_sharTalkstrue = new SharTalkAudio();
+	_sharTalkstrue = new SharTalkAudio(baseUrl);
 }
 
 void CRTPServerEngine::init(int fd)

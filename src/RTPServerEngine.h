@@ -117,6 +117,7 @@ private:
     int  CsockFd;
     string urlDNS;
     string UrlKey;
+    std::string baseUrl;
     ssize_t           RreadReturnLen;
     SAVER_RECV_DATA*  RecvRtpPackStr;
     std::string       RetTime_t;
@@ -168,7 +169,5 @@ inline void CRTPServerEngine::read_packHeadAfter_ptr()
 
 extern bool add_audio_type_info(std::string sim,audioType AudtypeInfo);
 extern void del_audio_type_info(std::string sim);
-extern int get_audio_connect_info(std::string _sim);
-extern void del_audio_connect_info(std::string _sim);
 
 #endif

@@ -2,74 +2,61 @@
 
 videoWorkpool::videoWorkpool(CONFIG config_, uint8_t BCDSIMLength, int threNum):
 _config(config_),
-event_num(0)
+event_num(0),
+m_BCDSIMLength(BCDSIMLength)
 {
-    taskmempoolptr = nullptr;
-    init_threadpool2(BCDSIMLength, threNum);
+    init_threadpool(threNum);
 }
 
 videoWorkpool::~videoWorkpool()
 {
-    if(taskmempoolptr){
-        delete taskmempoolptr;
-        taskmempoolptr = nullptr;
+    event_mutex.mutex_lock();
+    int size = event_queue.size();
+    for(int i = 0; i< size; i++){
+        CRTPServerEngine* engine = event_queue.front();
+        event_queue.pop();
+        event_num--;
+        delete engine;
     }
-    exit_queue2();
+    event_mutex.mutex_unlock();
 }
 
-void videoWorkpool::init_threadpool2(uint8_t BCDSIMLength, int threadNum)
+void videoWorkpool::init_threadpool(int threadNum)
 {
     live_thr_num = 0;
-    busy_thr_num = 0;
-    taskmempoolptr = new taskmempool(_config, BCDSIMLength, 0);
-    if(!taskmempoolptr) printf("%s:%s:%d new taskmempool == nullptr\n",__FILE__,__FUNCTION__,__LINE__);
-    
-    create_work2();
+    create_work();
     for(int i = 0; i< threadNum; i++){
-        create_task2();
+        create_task();
     }
 }
 
-void videoWorkpool::add_device_detonate_event2(int fd)
+void videoWorkpool::add_device_detonate_event(int fd)
 {
-    task = taskmempoolptr->get_memblock(fd);
-    event_mutex2.mutex_lock();
-    event_queue2.push(task);
+    event_mutex.mutex_lock();
+    CRTPServerEngine* engine = new CRTPServerEngine{_config, m_BCDSIMLength};
+    if(engine) engine->init(fd);
+    event_queue.push(engine);
     event_num++;
-    event_mutex2.mutex_unlock();
+    event_mutex.mutex_unlock();
 }
 
-void videoWorkpool::create_work2()
+void videoWorkpool::create_work()
 {
-    if(pthread_create(&pid2,NULL,_work_thread2,this)!=0){
+    if(pthread_create(&work_pid,NULL,_work_thread,this)!=0){
         printf("create work thread fail\n");
         exit(1);
     }
 }
 
-bool videoWorkpool::create_task2()
+bool videoWorkpool::create_task()
 {
     pthread_t task_pid;
-    if(pthread_create(&task_pid,NULL,_task_thread2,this)!=0){
+    if(pthread_create(&task_pid,NULL,_task_thread,this)!=0){
         printf("create task thread fail\n");
         return false;
     }
     add_live_thread_num();
     return true;
-}
-
-void videoWorkpool::exit_queue2()
-{
-    int size = 0;
-    event_mutex2.mutex_lock();
-    size = event_queue2.size();
-    for(int i = 0; i< size; i++){
-        Task* _task = event_queue2.front();
-        event_queue2.pop();
-        event_num--;
-        delete _task;
-    }
-    event_mutex2.mutex_unlock();
 }
 
 void videoWorkpool::add_live_thread_num()
@@ -95,37 +82,37 @@ int videoWorkpool::get_live_thread_num()
     return num;
 }
 
-int videoWorkpool::get_event_num2()
+int videoWorkpool::get_event_num()
 {
     int num = 0;
-    event_mutex2.mutex_lock();
+    event_mutex.mutex_lock();
     num = event_num;
-    event_mutex2.mutex_unlock();
+    event_mutex.mutex_unlock();
     return num;
 }
 
-void videoWorkpool::add_to_queue2(Task* task)
+void videoWorkpool::add_to_queue(CRTPServerEngine* engine)
 {
-    event_mutex2.mutex_lock();
-    event_queue2.push(task);
+    event_mutex.mutex_lock();
+    event_queue.push(engine);
     event_num++;
-    event_mutex2.mutex_unlock();
+    event_mutex.mutex_unlock();
 }
 
-Task* videoWorkpool::get_device_detonate_event2()
+CRTPServerEngine* videoWorkpool::get_device_detonate_event()
 {
-    Task* task = nullptr;
-    event_mutex2.mutex_lock();
-    if(!event_queue2.empty()){
-        task = event_queue2.front();
-        event_queue2.pop();
+    CRTPServerEngine* engine = nullptr;
+    event_mutex.mutex_lock();
+    if(!event_queue.empty()){
+        engine = event_queue.front();
+        event_queue.pop();
         event_num--;
     }
-    event_mutex2.mutex_unlock();
-    return task;
+    event_mutex.mutex_unlock();
+    return engine;
 }
 
-void* videoWorkpool::_work_thread2(void* This)
+void* videoWorkpool::_work_thread(void* This)
 {
     pthread_detach(pthread_self());
     videoWorkpool* _this = (videoWorkpool*)This;
@@ -136,40 +123,39 @@ void* videoWorkpool::_work_thread2(void* This)
     {
         usleep(5);
         
-        ReNum = _this->get_event_num2();
+        ReNum = _this->get_event_num();
         if(ReNum > 0){
             liveNum = 0;
             liveNum = _this->get_live_thread_num();
             if(liveNum > 0){
-                _this->cond2.signal();
+                _this->cond.signal();
             }
         }
     }
 }
 
-void* videoWorkpool::_task_thread2(void* This)
+void* videoWorkpool::_task_thread(void* This)
 {
     pthread_detach(pthread_self());
     videoWorkpool* _this = (videoWorkpool*)This;
-
     _this->task_run();
     pthread_exit(NULL);
 }
 
 void videoWorkpool::task_run()
 {
-    Task* task;
     for(;;){
-        cond2.wait();
+        cond.wait();
         decrease_live_thread_num();
 
-        task = get_device_detonate_event2();
-        if(task){
-            if(task->run()){
-                add_to_queue2(task);
-            }/*else {
-                taskmempoolptr->regression_mempool(task);
-            }*/
+        CRTPServerEngine* engine = get_device_detonate_event();
+        if(engine){
+            if(engine->ReadAndAnalyzeRTPPack()) {
+                add_to_queue(engine);
+            } else {
+                engine->reInit();
+                delete engine;
+            }
         }
 
         add_live_thread_num();

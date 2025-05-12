@@ -2,7 +2,7 @@
 #define BCDSIMLenght    6
 
 shar_network::shar_network(CONFIG config_, int threadNum):
-port(config_.port)
+port(config_.audioport)
 {
     workPool = new videoWorkpool(config_, BCDSIMLenght, threadNum);
     event = new epoll_event();
@@ -156,7 +156,7 @@ void shar_network::run()
                 // printf("============= _fd2 =%d\n", fd);
 
                 // webpoolObj->append_event(fd);
-                workPool->add_device_detonate_event2(fd);
+                workPool->add_device_detonate_event(fd);
                 epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
             }else if(events[index].events & (EPOLLIN | EPOLLRDHUP)){
                 printf("close fd.\n");

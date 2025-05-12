@@ -3,42 +3,38 @@
 #include "RTPServerEngine.h"
 #include "config.h"
 #include "lock.h"
-#include "taskmempool.h"
 
 class videoWorkpool
 {
 public:
     videoWorkpool(CONFIG config_, uint8_t BCDSIMLength, int threNum);
     ~videoWorkpool();
-    void add_device_detonate_event2(int fd);
+    void add_device_detonate_event(int fd);
 
 private:
-    void init_threadpool2(uint8_t BCDSIMLength, int threadNum);
-    void create_work2();
-    bool create_task2();
-    static void* _work_thread2(void* This);
-    static void* _task_thread2(void* This);
-    Task* get_device_detonate_event2();
-    int get_event_num2();
+    void init_threadpool(int threadNum);
+    void create_work();
+    bool create_task();
+    static void* _work_thread(void* This);
+    static void* _task_thread(void* This);
+    CRTPServerEngine* get_device_detonate_event();
+    int get_event_num();
     int get_live_thread_num();
     void add_live_thread_num();
     void decrease_live_thread_num();
     void task_run();
-    void add_to_queue2(Task*);
-    void exit_queue2();
+    void add_to_queue(CRTPServerEngine*);
 
 private:
     CONFIG          _config;
     int             event_num;
-    taskmempool*    taskmempoolptr;
-    queue<Task*>    event_queue2;
-    pthread_t       pid2;
+    queue<CRTPServerEngine*>    event_queue;
+    pthread_t       work_pid;
     Mutex           threadMutex;
-    Mutex           event_mutex2;
-    Cond            cond2;
+    Mutex           event_mutex;
+    Cond            cond;
     int             live_thr_num;
-    int             busy_thr_num;
-    Task*           task;             
+    int m_BCDSIMLength;
 };
 
 #endif

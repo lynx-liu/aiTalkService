@@ -162,7 +162,6 @@ namespace Cnvt
 	};
 
 }
-extern int get_http_quest_info_h(std::string sim_c);
 extern bool input_info(std::string sim_c, Cnvt::CConverter* _cnvtOBJ);
 extern void delete_input_info(std::string sim_c);
 #endif // CONVERTER_H
