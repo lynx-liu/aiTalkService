@@ -6,6 +6,8 @@ static std::map<std::string, std::map<std::string,  audioType>> sharObjInfoMap;
 
 SharTalkAudio::SharTalkAudio(std::string baseUrl)
 {
+    pAudioDenoiser = new AudioDenoiser(8000);
+
     ucOutBuff = new uint8_t[BUFF_SIZE]();
     deState = new adpcm_state();
 
@@ -42,6 +44,10 @@ SharTalkAudio::~SharTalkAudio()
     if(sharHttSer){
         delete sharHttSer;
         sharHttSer = nullptr;
+    }
+    if(pAudioDenoiser){
+        delete pAudioDenoiser;
+        pAudioDenoiser = nullptr;
     }
 }
 
@@ -140,7 +146,7 @@ bool SharTalkAudio::write_shar_device()
     }
 
     if(isSpeechPresent((short*)ucOutBuff, ucOutbuffSize/sizeof(short))) {
-        printf("isSpeechPresent: sim: %s, mainSIM: %s, size:%d\n", currentSIM.c_str(), mainSIM.c_str());
+        printf("isSpeechPresent: sim: %s, mainSIM: %s\n", currentSIM.c_str(), mainSIM.c_str());
         if(currentSIM != mainSIM) {
             mainSIM = currentSIM;
             memset(deState, 0, sizeof(adpcm_state));
@@ -157,6 +163,8 @@ bool SharTalkAudio::write_shar_device()
         printf("error groupId: %s\n", groupID.c_str());
         return false;
     }
+
+    pAudioDenoiser->denoiseBuffer((short*)ucOutBuff, ucOutbuffSize/sizeof(short));
 
     auto& simMap = groupIt->second;
     //printf("mainSIM:%s, SIM: %s, size: %d\n", mainSIM.c_str(), currentSIM.c_str(), simMap.size());

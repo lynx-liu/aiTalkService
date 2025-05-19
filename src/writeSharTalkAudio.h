@@ -4,6 +4,7 @@
 #include "audioType.h"
 #include "AAC2PCM.h"
 #include "shar_http.h"
+#include "AudioDenoiser.h"
 #include <algorithm> // 包含 std::find
 
 #define BUFF_SIZE 1024
@@ -46,6 +47,8 @@ private:
     sharHttpSer* sharHttSer;
     std::string currentSIM;
     std::string groupID;
+
+    AudioDenoiser *pAudioDenoiser;
 };
 
 extern bool get_audio_type_info(std::string sim,audioType& audioInfo);
