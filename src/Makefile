@@ -7,7 +7,7 @@ OBJS := $(OBJS:.c=.o)
 OBJS := $(OBJS:.cc=.o)
 
 # 编译参数和头文件路径
-FLAGS = -lcrypto -lpthread -lavformat -lavcodec -lavutil -lswresample -lcurl -lfaad -lrtmp
+FLAGS = -lcrypto -lpthread -lavformat -lavcodec -lavutil -lswresample -lcurl -lfaad -lrtmp -lz -ldl
 INCLUDE = -I ../json
 
 # 最终目标
