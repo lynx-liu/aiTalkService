@@ -26,6 +26,10 @@ int get_config(CONFIG* cfg)
 				if(req == NULL || req->QueryIntText(&s_config.audioport) != XML_SUCCESS)
 					break;
 
+				req = config->FirstChildElement("bcdlenght");
+				if(req == NULL || req->QueryIntText(&s_config.bcdlenght) != XML_SUCCESS)
+					break;
+
 				req = config->FirstChildElement("UrlKey");
 				if(req == NULL) break;
 				strncpy(s_config.UrlKey, req->GetText(), sizeof(s_config.UrlKey) - 1);
@@ -43,6 +47,7 @@ int get_config(CONFIG* cfg)
 		if(!load) {
 			strncpy(s_config.httpserver, "https://wechat.che-mi.net", sizeof(s_config.httpserver));
 			s_config.audioport = 9191;
+			s_config.bcdlenght = 6;
 		}
 	}
 	*cfg = s_config;

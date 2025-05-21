@@ -1,10 +1,9 @@
 #include "shar_network.h"
-#define BCDSIMLenght    6
 
 shar_network::shar_network(CONFIG config_, int threadNum):
 port(config_.audioport)
 {
-    workPool = new videoWorkpool(config_, BCDSIMLenght, threadNum);
+    workPool = new videoWorkpool(config_, config_.bcdlenght, threadNum);
     event = new epoll_event();
     wsockFd = 0;
     epollfd = 0;

@@ -1,6 +1,7 @@
 <config>
 <httpserver>http://192.168.0.101:8084</httpserver>
 <audioport>9191</audioport>
+<bcdlenght>6</bcdlenght>
 <UrlKey>2bd8c611ec3498d791595df39669a904</UrlKey>
 <urlDNS>test.livepush.che-mi.net</urlDNS>
 </config>

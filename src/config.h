@@ -6,6 +6,7 @@ typedef struct config
 {   
     char httpserver[128];
     int  audioport;
+    int bcdlenght;
     char UrlKey[128];
     char urlDNS[128];
 }CONFIG;
