@@ -1,8 +1,12 @@
 #include <cstddef>
 #include "writeSharTalkAudio.h"
 
-static std::string mainSIM = std::string();
-static std::map<std::string, std::map<std::string,  audioType>> sharObjInfoMap;
+struct GroupAudioInfo {
+    std::string mainSIM;
+    std::map<std::string, audioType> simMap;
+};
+
+static std::map<std::string, GroupAudioInfo> sharObjInfoMap;
 
 SharTalkAudio::SharTalkAudio(std::string baseUrl)
 {
@@ -63,15 +67,16 @@ void SharTalkAudio::reint()
     if (!currentSIM.empty()) {
         auto groupIt = sharObjInfoMap.find(groupID);
         if (groupIt != sharObjInfoMap.end()) {
-            auto& simMap = groupIt->second;
-    
+            GroupAudioInfo& groupInfo = groupIt->second;
+            auto& simMap = groupInfo.simMap;
+
             simMap.erase(currentSIM);
-            
-            if (mainSIM == currentSIM) {
+
+            if (groupInfo.mainSIM == currentSIM) {
                 if (!simMap.empty()) {
-                    mainSIM = simMap.begin()->first;
+                    groupInfo.mainSIM = simMap.begin()->first;
                 } else {
-                    mainSIM.clear();  // 当前组为空了
+                    groupInfo.mainSIM.clear();  // 当前组为空了
                 }
             }
             
@@ -91,10 +96,6 @@ bool SharTalkAudio::sharInit(std::string sim, SEND_VIDEO_INFO_STRU* infoPtr, uin
     dataInfoPtr = infoPtr;
     audio_type = (loadType & 0xFF);
 
-    if(mainSIM.empty()){
-        mainSIM = currentSIM;
-    }
-
     groupID.clear();
     if(sharHttSer->POST_request(sim, groupID)){   //HTTP POST请求
         if(!groupID.empty()){
@@ -108,7 +109,9 @@ bool SharTalkAudio::sharInit(std::string sim, SEND_VIDEO_INFO_STRU* infoPtr, uin
 
 void SharTalkAudio::add_map(const std::string& sim, const std::string& groupId)
 {
-    auto& simMap = sharObjInfoMap[groupId];
+    GroupAudioInfo& groupInfo = sharObjInfoMap[groupId];
+    auto& simMap = groupInfo.simMap;
+
     if (simMap.find(sim) != simMap.end())
         return;
 
@@ -118,6 +121,11 @@ void SharTalkAudio::add_map(const std::string& sim, const std::string& groupId)
     audioInfo.Bt8timeStamp = get_timestamp();
 
     simMap[sim] = audioInfo;
+
+    if (groupInfo.mainSIM.empty()) {
+        groupInfo.mainSIM = sim;
+    }
+
     printf("group size: %d, currentGroup size: %d\n", sharObjInfoMap.size(), simMap.size());
 }
 
@@ -145,29 +153,30 @@ bool SharTalkAudio::write_shar_device()
         return false;
     }
 
-    if(isSpeechPresent((short*)ucOutBuff, ucOutbuffSize/sizeof(short))) {
-        printf("isSpeechPresent: sim: %s, mainSIM: %s\n", currentSIM.c_str(), mainSIM.c_str());
-        if(currentSIM != mainSIM) {
-            mainSIM = currentSIM;
-            memset(deState, 0, sizeof(adpcm_state));
-            memset(enState, 0, sizeof(adpcm_state));
-        }
-    }
-    
-    if(currentSIM != mainSIM || groupID.empty()){
-        return false;
-    }
-
     auto groupIt = sharObjInfoMap.find(groupID);
     if (groupIt == sharObjInfoMap.end()) {
         printf("error groupId: %s\n", groupID.c_str());
         return false;
     }
 
-    pAudioDenoiser->denoiseBuffer((short*)ucOutBuff, ucOutbuffSize/sizeof(short));
+    GroupAudioInfo& groupInfo = groupIt->second;
+    auto& simMap = groupInfo.simMap;
 
-    auto& simMap = groupIt->second;
-    //printf("mainSIM:%s, SIM: %s, size: %d\n", mainSIM.c_str(), currentSIM.c_str(), simMap.size());
+    if(isSpeechPresent((short*)ucOutBuff, ucOutbuffSize/sizeof(short))) {
+        printf("isSpeechPresent: sim: %s, mainSIM: %s\n", currentSIM.c_str(), groupInfo.mainSIM.c_str());
+        if(currentSIM != groupInfo.mainSIM) {
+            groupInfo.mainSIM = currentSIM;
+            memset(deState, 0, sizeof(adpcm_state));
+            memset(enState, 0, sizeof(adpcm_state));
+        }
+    }
+    
+    if(currentSIM != groupInfo.mainSIM || groupID.empty()){
+        return false;
+    }
+
+    pAudioDenoiser->denoiseBuffer((short*)ucOutBuff, ucOutbuffSize/sizeof(short));
+    //printf("mainSIM:%s, SIM: %s, size: %d\n", groupInfo.mainSIM.c_str(), currentSIM.c_str(), simMap.size());
     
     for (auto& simPair : simMap) {
         const std::string& sim = simPair.first;
@@ -178,9 +187,10 @@ bool SharTalkAudio::write_shar_device()
         push_to_device(audioInfo);
         alter_map(audioInfo); 
     }
+    return true;
 }
 
-bool SharTalkAudio::push_to_device(audioType audioInfo)
+bool SharTalkAudio::push_to_device(audioType& audioInfo)
 {
 	if(!auRtpPtr) return false;
 	 

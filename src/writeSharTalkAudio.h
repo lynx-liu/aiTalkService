@@ -22,7 +22,7 @@ private:
     bool G711A_decode();
     bool ADPCM_decode();
     bool audio_decoder();
-    bool push_to_device(audioType audioInfo);
+    bool push_to_device(audioType& audioInfo);
     bool write_data(audioType& audioInfo);
     void add_map(const std::string& sim, const std::string& groupId);
     void alter_map(audioType& audioInfo);
@@ -53,8 +53,5 @@ private:
 
 extern bool get_audio_type_info(std::string sim,audioType& audioInfo);
 extern void del_audio_type_info(std::string sim);
-
-extern void install_deviceID(std::string sim, std::string strID);
-extern void delete_deviceID_info(std::string sim);
 
 #endif
