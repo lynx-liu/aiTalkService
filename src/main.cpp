@@ -1,4 +1,5 @@
 #include <signal.h>
+#include <memory>
 #include "shar_network.h"
 
 CONFIG ServerConfig;

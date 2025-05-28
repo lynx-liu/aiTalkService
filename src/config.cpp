@@ -30,15 +30,6 @@ int get_config(CONFIG* cfg)
 				if(req == NULL || req->QueryIntText(&s_config.bcdlenght) != XML_SUCCESS)
 					break;
 
-				req = config->FirstChildElement("UrlKey");
-				if(req == NULL) break;
-				strncpy(s_config.UrlKey, req->GetText(), sizeof(s_config.UrlKey) - 1);
-
-				req = config->FirstChildElement("urlDNS");
-				if(req == NULL)
-					break;
-				strncpy(s_config.urlDNS, req->GetText(), sizeof(s_config.urlDNS) - 1);
-
 				load = 1;
 
 			} while(0);

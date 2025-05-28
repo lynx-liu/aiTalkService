@@ -41,7 +41,6 @@
 #define _PKG_HD_RECVING             1          //接收包头中，包头不完整，继续接收中
 #define _PKG_HD_REMAINING_INIT_1    2          //后续包头字节
 #define _PKG_HD_REMAINING_INIT_2    3
-#define _PKG_HD_REMAINING_INIT_3    4
 #define _PKG_HD__REMAINING_RECVING  5          //接收报文
 #define _PKG_HD_REMAINING_INIT_ERR  404
 
@@ -111,18 +110,6 @@ typedef struct _RTP_PACKET_HEAD
     unsigned char       DataType4:4;                //数据类型
     unsigned char       subpackageHandleMark4:4;    //分包处理标记
 }PACKET_HEAD;
-
-/***************************************
- 结构类型说明：包头后14字节结构体
- **************************************/
-
-typedef struct _RTP_PACKET_HEAD_14
-{
-    unsigned long int   Bt8timeStamp;              //时间戳
-    unsigned short      WdLastIFrameInterval;      //与上一帧的时间间隔
-    unsigned short      WdLastFrameInterval;       //与上一帧的时间间隔
-    unsigned short      WdBodyLen;                 //数据体长度
-}PACKET_HEAD_14;
 
 /***************************************
  结构类型说明：包头后10字节结构体

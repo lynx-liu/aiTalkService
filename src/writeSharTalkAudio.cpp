@@ -155,7 +155,6 @@ bool SharTalkAudio::write_shar_device()
 
     auto groupIt = sharObjInfoMap.find(groupID);
     if (groupIt == sharObjInfoMap.end()) {
-        printf("error groupId: %s\n", groupID.c_str());
         return false;
     }
 
