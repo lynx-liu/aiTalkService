@@ -1,9 +1,12 @@
+#include <cstring>
+#include <unistd.h>
+#include <fcntl.h>
 #include "shar_network.h"
 
 shar_network::shar_network(CONFIG config_, int threadNum):
 port(config_.audioport)
 {
-    workPool = new videoWorkpool(config_, config_.bcdlenght, threadNum);
+    workPool = new Workpool(config_, threadNum);
     event = new epoll_event();
     wsockFd = 0;
     epollfd = 0;
@@ -94,7 +97,7 @@ bool shar_network::start_sharNetwork()
 
 bool shar_network::addfd(int fd, bool oneshot)
 {
-	setnonblocking(fd);
+	//setnonblocking(fd);
 
     // epoll_event event;
     memset(event, 0, sizeof(epoll_event));

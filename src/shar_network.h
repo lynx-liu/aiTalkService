@@ -2,7 +2,7 @@
 #define _SHAR_NETWORK_H
 #include <netinet/tcp.h>
 #include "StreDataType.h"
-#include "videoWorkpool.h"
+#include "workpool.h"
 
 #define LISTEN_MAXI 1024
 #define EVENTS_MAXIM 32
@@ -28,7 +28,7 @@ private:
     int wsockFd;
     int epollfd;
 
-    videoWorkpool* workPool;
+    Workpool* workPool;
 };
 
 

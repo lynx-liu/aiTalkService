@@ -2,7 +2,6 @@
 #define _write_SHAR_TALK_AUDIO_H
 #include "StreDataType.h"
 #include "audioType.h"
-#include "AAC2PCM.h"
 #include "shar_http.h"
 #include "AudioDenoiser.h"
 #include <algorithm> // 包含 std::find
@@ -15,34 +14,28 @@ public:
     SharTalkAudio(std::string baseUrl);
     ~SharTalkAudio();
 
-    bool sharInit(std::string sim, SEND_VIDEO_INFO_STRU* infoPtr, uint8_t loadType);
-    bool write_shar_device();
+    bool sharInit(std::string sim, uint8_t loadType);
+    bool write_shar_device(uint8_t *data, uint16_t size);
     void reint();
 private:
-    bool G711A_decode();
-    bool ADPCM_decode();
-    bool audio_decoder();
-    bool push_to_device(audioType& audioInfo);
-    bool write_data(audioType& audioInfo);
+    int ADPCM_decode(uint8_t *data, uint16_t size);
+    int audio_decoder(uint8_t *data, uint16_t size);
+    bool push_to_device(int shortPcmSize, audioType& audioInfo);
+    bool write_data(audioType& audioInfo, uint16_t BodyLen);
     void add_map(const std::string& sim, const std::string& groupId);
     void alter_map(audioType& audioInfo);
     uint64_t get_timestamp();
     bool isSpeechPresent(const short* pcm, int sampleCount, int threshold = 500);
     
 private:
-    SEND_VIDEO_INFO_STRU* dataInfoPtr;
     uint8_t  audio_type;
 
     uint8_t* ucOutBuff;
-    int    ucOutbuffSize;
     adpcm_state* deState;
 
     //write 
     adpcm_state* enState;
-    AUDIO_HEADER* auRtpPtr;
-
     uint8_t* audioEncodeBuf;
-    uint16_t BodyLen;
 
     sharHttpSer* sharHttSer;
     std::string currentSIM;

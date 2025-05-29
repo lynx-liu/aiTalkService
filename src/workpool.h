@@ -4,11 +4,11 @@
 #include "config.h"
 #include "lock.h"
 
-class videoWorkpool
+class Workpool
 {
 public:
-    videoWorkpool(CONFIG config_, uint8_t BCDSIMLength, int threNum);
-    ~videoWorkpool();
+    Workpool(CONFIG config_, int threNum);
+    ~Workpool();
     void add_device_detonate_event(int fd);
 
 private:
@@ -34,7 +34,6 @@ private:
     Mutex           event_mutex;
     Cond            cond;
     int             live_thr_num;
-    int m_BCDSIMLength;
 };
 
 #endif

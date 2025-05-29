@@ -1,14 +1,14 @@
-#include "videoWorkpool.h"
+#include <unistd.h>
+#include "workpool.h"
 
-videoWorkpool::videoWorkpool(CONFIG config_, uint8_t BCDSIMLength, int threNum):
+Workpool::Workpool(CONFIG config_, int threNum):
 _config(config_),
-event_num(0),
-m_BCDSIMLength(BCDSIMLength)
+event_num(0)
 {
     init_threadpool(threNum);
 }
 
-videoWorkpool::~videoWorkpool()
+Workpool::~Workpool()
 {
     event_mutex.mutex_lock();
     int size = event_queue.size();
@@ -21,7 +21,7 @@ videoWorkpool::~videoWorkpool()
     event_mutex.mutex_unlock();
 }
 
-void videoWorkpool::init_threadpool(int threadNum)
+void Workpool::init_threadpool(int threadNum)
 {
     live_thr_num = 0;
     create_work();
@@ -30,17 +30,18 @@ void videoWorkpool::init_threadpool(int threadNum)
     }
 }
 
-void videoWorkpool::add_device_detonate_event(int fd)
+void Workpool::add_device_detonate_event(int fd)
 {
     event_mutex.mutex_lock();
-    CRTPServerEngine* engine = new CRTPServerEngine{_config, m_BCDSIMLength};
-    if(engine) engine->init(fd);
-    event_queue.push(engine);
-    event_num++;
+    CRTPServerEngine* engine = new CRTPServerEngine{fd, _config};
+    if(engine) {
+        event_queue.push(engine);
+        event_num++;
+    }
     event_mutex.mutex_unlock();
 }
 
-void videoWorkpool::create_work()
+void Workpool::create_work()
 {
     if(pthread_create(&work_pid,NULL,_work_thread,this)!=0){
         printf("create work thread fail\n");
@@ -48,7 +49,7 @@ void videoWorkpool::create_work()
     }
 }
 
-bool videoWorkpool::create_task()
+bool Workpool::create_task()
 {
     pthread_t task_pid;
     if(pthread_create(&task_pid,NULL,_task_thread,this)!=0){
@@ -59,21 +60,21 @@ bool videoWorkpool::create_task()
     return true;
 }
 
-void videoWorkpool::add_live_thread_num()
+void Workpool::add_live_thread_num()
 {
     threadMutex.mutex_lock();
     live_thr_num++;
     threadMutex.mutex_unlock();
 }
 
-void videoWorkpool::decrease_live_thread_num()
+void Workpool::decrease_live_thread_num()
 {
     threadMutex.mutex_lock();
     live_thr_num--;
     threadMutex.mutex_unlock();
 }
 
-int videoWorkpool::get_live_thread_num()
+int Workpool::get_live_thread_num()
 {
     int num = 0;
     threadMutex.mutex_lock();
@@ -82,7 +83,7 @@ int videoWorkpool::get_live_thread_num()
     return num;
 }
 
-int videoWorkpool::get_event_num()
+int Workpool::get_event_num()
 {
     int num = 0;
     event_mutex.mutex_lock();
@@ -91,7 +92,7 @@ int videoWorkpool::get_event_num()
     return num;
 }
 
-void videoWorkpool::add_to_queue(CRTPServerEngine* engine)
+void Workpool::add_to_queue(CRTPServerEngine* engine)
 {
     event_mutex.mutex_lock();
     event_queue.push(engine);
@@ -99,7 +100,7 @@ void videoWorkpool::add_to_queue(CRTPServerEngine* engine)
     event_mutex.mutex_unlock();
 }
 
-CRTPServerEngine* videoWorkpool::get_device_detonate_event()
+CRTPServerEngine* Workpool::get_device_detonate_event()
 {
     CRTPServerEngine* engine = nullptr;
     event_mutex.mutex_lock();
@@ -112,10 +113,10 @@ CRTPServerEngine* videoWorkpool::get_device_detonate_event()
     return engine;
 }
 
-void* videoWorkpool::_work_thread(void* This)
+void* Workpool::_work_thread(void* This)
 {
     pthread_detach(pthread_self());
-    videoWorkpool* _this = (videoWorkpool*)This;
+    Workpool* _this = (Workpool*)This;
 
     int ReNum;
     int liveNum;
@@ -134,15 +135,15 @@ void* videoWorkpool::_work_thread(void* This)
     }
 }
 
-void* videoWorkpool::_task_thread(void* This)
+void* Workpool::_task_thread(void* This)
 {
     pthread_detach(pthread_self());
-    videoWorkpool* _this = (videoWorkpool*)This;
+    Workpool* _this = (Workpool*)This;
     _this->task_run();
     pthread_exit(NULL);
 }
 
-void videoWorkpool::task_run()
+void Workpool::task_run()
 {
     for(;;){
         cond.wait();

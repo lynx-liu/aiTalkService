@@ -57,6 +57,10 @@ bool sharHttpSer::POST_request(std::string device, std::string& ID)
         curl_easy_cleanup(curl);
     }
     curl_global_cleanup();
+
+#if !DEBUG
+    ID = "debug_test_group";
+#endif
     return !ID.empty();
 }
 
@@ -67,11 +71,6 @@ void sharHttpSer::getGoupId(std::string& ID)
 
 	if (reader.parse(readBuffer, value)){
 		int code = value["code"].asInt();
-		std::cout << "code = " << code << std::endl;
-		std::cout << "msg = " << value["msg"].asString() << std::endl;
-        std::cout << "name = " << value["data"]["name"].asString() << std::endl;
-        std::cout << "id = " << value["data"]["id"].asString() << std::endl;
-        std::cout << "type = " << value["data"]["type"].asInt() << std::endl;
         ID = value["data"]["id"].asString();
 	}
 }
@@ -129,11 +128,7 @@ int sharHttpSer::getResult(std::string strResponse)
 	Json::Reader reader;
 	Json::Value value;
 
-	if (reader.parse(strResponse, value)){
+	if (reader.parse(strResponse, value))
 		code = value["code"].asInt();
-
-		std::cout << "code = " << value["code"].asInt() << std::endl;
-		std::cout << "msg = " << value["msg"].asString() << std::endl;
-	}
     return code;
 }

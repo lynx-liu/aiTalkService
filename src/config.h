@@ -6,7 +6,6 @@ typedef struct config
 {   
     char httpserver[128];
     int  audioport;
-    int bcdlenght;
 }CONFIG;
 
 int get_config(CONFIG* cfg);

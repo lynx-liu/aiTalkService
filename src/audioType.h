@@ -4,16 +4,14 @@
 
 struct audioType
 {
-    unsigned char       BCDSIMCardNumber[10];
-    int                 BCDSIMLen;
-    unsigned char       ChannelNumber;
-    unsigned char		Tag_PayloadType;
-    int                 socketFd;
-    unsigned char       ADPCM_8[16];
-    unsigned long int   Bt8timeStamp;
-    int                 num;
-    adpcm_state*        adpcmState;
-    char                 index;
+    uint8_t         BCDSIMCardNumber[10];
+    uint32_t        BCDSIMLen;
+    uint8_t         ChannelNumber;
+    uint8_t         type;
+    uint32_t        socketFd;
+    uint8_t         ADPCM_8[4];
+    uint64_t        Bt8timeStamp;
+    uint16_t        num;
 };
 
 #endif

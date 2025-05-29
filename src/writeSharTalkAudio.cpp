@@ -1,4 +1,6 @@
+#include <unistd.h>
 #include <cstddef>
+#include <cstring>
 #include "writeSharTalkAudio.h"
 
 struct GroupAudioInfo {
@@ -17,7 +19,6 @@ SharTalkAudio::SharTalkAudio(std::string baseUrl)
 
     audioEncodeBuf = new uint8_t[BUFF_SIZE]();
     enState = new adpcm_state();
-    auRtpPtr = new AUDIO_HEADER();
 
     sharHttSer= new sharHttpSer(baseUrl);
     currentSIM.clear();
@@ -41,10 +42,6 @@ SharTalkAudio::~SharTalkAudio()
 		delete enState;
 		enState = nullptr;
 	}
-    if(auRtpPtr){
-        delete auRtpPtr;
-        auRtpPtr = nullptr;
-    }
     if(sharHttSer){
         delete sharHttSer;
         sharHttSer = nullptr;
@@ -57,12 +54,10 @@ SharTalkAudio::~SharTalkAudio()
 
 void SharTalkAudio::reint()
 {
-    ucOutbuffSize = 0;
     if(ucOutBuff) memset(ucOutBuff, 0, BUFF_SIZE);
     if(audioEncodeBuf) memset(audioEncodeBuf, 0, BUFF_SIZE);
     if(deState) memset(deState, 0, sizeof(adpcm_state));
     if(enState) memset(enState, 0, sizeof(adpcm_state));
-    if(auRtpPtr) memset(auRtpPtr, 0, sizeof(AUDIO_HEADER));
 
     if (!currentSIM.empty()) {
         auto groupIt = sharObjInfoMap.find(groupID);
@@ -90,21 +85,20 @@ void SharTalkAudio::reint()
     }
 }
 
-bool SharTalkAudio::sharInit(std::string sim, SEND_VIDEO_INFO_STRU* infoPtr, uint8_t loadType)
+bool SharTalkAudio::sharInit(std::string sim, uint8_t loadType)
 {
     currentSIM = sim;
-    dataInfoPtr = infoPtr;
-    audio_type = (loadType & 0xFF);
+    audio_type = loadType&0x7F;
 
     groupID.clear();
     if(sharHttSer->POST_request(sim, groupID)){   //HTTP POST请求
         if(!groupID.empty()){
             printf("groupID: %s\n", groupID.data()); 
             add_map(currentSIM, groupID);
+            return sharHttSer->POST_update(sim, 1);  //1.链接成功 2.离线  3. 正在进行 4.结束
         }
-        sharHttSer->POST_update(sim, 1);  //1.链接成功 2.离线  3. 正在进行 4.结束
     }
-    return true;
+    return false;
 }
 
 void SharTalkAudio::add_map(const std::string& sim, const std::string& groupId)
@@ -119,37 +113,34 @@ void SharTalkAudio::add_map(const std::string& sim, const std::string& groupId)
     memset(&audioInfo, 0, sizeof(audioType));
     get_audio_type_info(sim, audioInfo);
     audioInfo.Bt8timeStamp = get_timestamp();
-
     simMap[sim] = audioInfo;
 
     if (groupInfo.mainSIM.empty()) {
         groupInfo.mainSIM = sim;
     }
 
-    printf("group size: %d, currentGroup size: %d\n", sharObjInfoMap.size(), simMap.size());
+    printf("group size: %zu, currentGroup size: %zu\n", sharObjInfoMap.size(), simMap.size());
 }
 
 void SharTalkAudio::alter_map(audioType& audioInfo)
 {
     audioInfo.Bt8timeStamp += 3;
     audioInfo.num += 1;
-    audioInfo.index = enState->index;
 }
 
 
 uint64_t SharTalkAudio::get_timestamp()
 {
     struct timeval tv;
-	uint64_t timestamp;
     gettimeofday(&tv, NULL);
-	timestamp = (tv.tv_sec * 1000 + tv.tv_usec / 1000);
-    return timestamp;
+    return tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
-bool SharTalkAudio::write_shar_device()
+bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
 {
-    if (!audio_decoder()) {
-        printf("audio_type fail!\n");
+    int shortPcmSize = audio_decoder(data, size)/sizeof(short);
+    if (shortPcmSize<=0) {
+        printf("audio_decoder fail!\n");
         return false;
     }
 
@@ -161,7 +152,7 @@ bool SharTalkAudio::write_shar_device()
     GroupAudioInfo& groupInfo = groupIt->second;
     auto& simMap = groupInfo.simMap;
 
-    if(isSpeechPresent((short*)ucOutBuff, ucOutbuffSize/sizeof(short))) {
+    if(isSpeechPresent((short*)ucOutBuff, shortPcmSize)) {
         printf("isSpeechPresent: sim: %s, mainSIM: %s\n", currentSIM.c_str(), groupInfo.mainSIM.c_str());
         if(currentSIM != groupInfo.mainSIM) {
             groupInfo.mainSIM = currentSIM;
@@ -174,7 +165,7 @@ bool SharTalkAudio::write_shar_device()
         return false;
     }
 
-    pAudioDenoiser->denoiseBuffer((short*)ucOutBuff, ucOutbuffSize/sizeof(short));
+    pAudioDenoiser->denoiseBuffer((short*)ucOutBuff, shortPcmSize);
     //printf("mainSIM:%s, SIM: %s, size: %d\n", groupInfo.mainSIM.c_str(), currentSIM.c_str(), simMap.size());
     
     for (auto& simPair : simMap) {
@@ -183,51 +174,47 @@ bool SharTalkAudio::write_shar_device()
 
         if (sim == currentSIM) continue;
 
-        push_to_device(audioInfo);
+        push_to_device(shortPcmSize, audioInfo);
         alter_map(audioInfo); 
     }
     return true;
 }
 
-bool SharTalkAudio::push_to_device(audioType& audioInfo)
+bool SharTalkAudio::push_to_device(int shortPcmSize, audioType& audioInfo)
 {
-	if(!auRtpPtr) return false;
-	 
-	auRtpPtr->info1          = 0x81;
-	auRtpPtr->info2          = audioInfo.Tag_PayloadType;              
-	memcpy(auRtpPtr->BCDSIMCardNumber, audioInfo.BCDSIMCardNumber, audioInfo.BCDSIMLen);
-	auRtpPtr->Bt1LogicChannelNumber = audioInfo.ChannelNumber;
-	auRtpPtr->info3          = 0x30;
-
-    BodyLen = 0;
+    uint16_t BodyLen = 0;
 	memset(audioEncodeBuf, 0, BUFF_SIZE);
-	if(audioInfo.Tag_PayloadType == 0x86){
-		g711a_encode(audioEncodeBuf, (short*)ucOutBuff, ucOutbuffSize/sizeof(short));
-		BodyLen = (uint16_t)(ucOutbuffSize / 2);
-	}else if(audioInfo.Tag_PayloadType == 0x9A){
+	if((audioInfo.type&0x7F) == LOAD_TYPE_G711A){
+		g711a_encode(audioEncodeBuf, (short*)ucOutBuff, shortPcmSize);
+		BodyLen = shortPcmSize;
+	}else if((audioInfo.type&0x7F) == LOAD_TYPE_ADPCM){
 		memcpy(audioEncodeBuf,audioInfo.ADPCM_8, 4);
 		audioEncodeBuf[4] = (enState->valprev & 0xff);
 		audioEncodeBuf[5] = ((enState->valprev >> 8) & 0xff);
 		audioEncodeBuf[6] = enState->index;
 		audioEncodeBuf[7] = 0x00;
-		adpcm_coder((short*)ucOutBuff, (char*)(audioEncodeBuf+8), ucOutbuffSize / 2, enState);
-		BodyLen = (ucOutbuffSize / 4) + 8;
+		adpcm_coder((short*)ucOutBuff, (char*)(audioEncodeBuf+8), shortPcmSize, enState);
+		BodyLen = (shortPcmSize / 2) + 8;
 	}else{
         return false;
     }
-
-	auRtpPtr->WdBodyLen = htons(BodyLen);
-    auRtpPtr->WdPackageSequence = htons(audioInfo.num);
-	get_timestamp();
-
-	auRtpPtr->Bt8timeStamp = htonl(audioInfo.Bt8timeStamp); 
-	return write_data(audioInfo);
+	return write_data(audioInfo, BodyLen);
 }
 
-bool SharTalkAudio::write_data(audioType& audioInfo)
+bool SharTalkAudio::write_data(audioType& audioInfo, uint16_t BodyLen)
 {
-	if(!(write(audioInfo.socketFd, auRtpPtr, offsetof(AUDIO_HEADER, BCDSIMCardNumber)+audioInfo.BCDSIMLen) &&
-        write(audioInfo.socketFd, (uint8_t*)auRtpPtr + offsetof(AUDIO_HEADER, Bt1LogicChannelNumber), sizeof(AUDIO_HEADER) - offsetof(AUDIO_HEADER, Bt1LogicChannelNumber))))
+    RTP_PKG_HEADER pkg;
+	pkg.type  = audioInfo.type;              
+	memcpy(pkg.BCDSIMCardNumber, audioInfo.BCDSIMCardNumber, audioInfo.BCDSIMLen);
+	pkg.Bt1LogicChannelNumber = audioInfo.ChannelNumber;
+	pkg.WdBodyLen = htons(BodyLen);
+    pkg.WdPackageSequence = htons(audioInfo.num);
+	pkg.Bt8timeStamp = htonll(audioInfo.Bt8timeStamp); 
+
+    pkg.DWFramHeadMark = htonl(pkg.DWFramHeadMark);
+
+	if(!(write(audioInfo.socketFd, &pkg, offsetof(RTP_PKG_HEADER, BCDSIMCardNumber)+audioInfo.BCDSIMLen) &&
+        write(audioInfo.socketFd, (uint8_t*)&pkg + offsetof(RTP_PKG_HEADER, Bt1LogicChannelNumber), sizeof(RTP_PKG_HEADER) - offsetof(RTP_PKG_HEADER, Bt1LogicChannelNumber))))
     {
         close(audioInfo.socketFd);
 		perror("errno:");
@@ -248,55 +235,32 @@ bool SharTalkAudio::write_data(audioType& audioInfo)
 	return true;
 }
 
-bool SharTalkAudio::audio_decoder()
+int SharTalkAudio::audio_decoder(uint8_t *data, uint16_t size)
 {
-    if(!dataInfoPtr) return false;
-    if(!ucOutBuff) return false;
-
-    ucOutbuffSize = 0;
+    if(!ucOutBuff) return 0;
     memset(ucOutBuff, 0, BUFF_SIZE);
-    if(audio_type == LOAD_TYPE_G711A_TYPE){
-        if(!G711A_decode()) return false;
-    }else if(audio_type == LOAD_TYPE_ADPCM_TYPE){ 
-        if(!ADPCM_decode()) return false;
-    }else{
-        return false;
-    }
 
-    return true;
+    if(audio_type == LOAD_TYPE_G711A){
+        return g711a_decode((short*)ucOutBuff, data, size);
+    }else if(audio_type == LOAD_TYPE_ADPCM){ 
+        return ADPCM_decode(data, size);
+    }
+    return 0;
 }
 
-
-bool SharTalkAudio::G711A_decode()
+int SharTalkAudio::ADPCM_decode(uint8_t *data, uint16_t size)
 {
-    if(!dataInfoPtr || !dataInfoPtr->VidePacData) return false;
-
-    ucOutbuffSize = g711a_decode((short*)ucOutBuff, dataInfoPtr->VidePacData, dataInfoPtr->WdBodyLen);
-    return true;
-}
-
-bool SharTalkAudio::ADPCM_decode()
-{
-
-    if(!deState || !dataInfoPtr) return false;
-
-    uint8_t* dataPtr = dataInfoPtr->VidePacData;
-    int len = dataInfoPtr->WdBodyLen;
-
-    if (dataPtr[0] == 0x00 && dataPtr[1] == 0x01 && (dataPtr[2] & 0xff) == (len - 4) / 2 && dataPtr[3] == 0x00){
-        deState->valprev = (short)(((dataPtr[5] << 8) & 0xff) | (dataPtr[4] & 0xff));
-        deState->index = dataPtr[6];
-        adpcm_decoder((char*)(dataPtr +8), (short*)ucOutBuff, len - 8, deState);
-        ucOutbuffSize = (len - 8) * 4;
-        return true;
+    if (data[0] == 0x00 && data[1] == 0x01 && (data[2] & 0xff) == (size - 4) / 2 && data[3] == 0x00){
+        deState->valprev = (short)(((data[5] << 8) & 0xff) | (data[4] & 0xff));
+        deState->index = data[6];
+        adpcm_decoder((char*)(data +8), (short*)ucOutBuff, size - 8, deState);
+        return (size - 8) * 4;
     }
 
-    deState->valprev = (short)(((dataPtr[1] << 8) & 0xff) | (dataPtr[0] & 0xff));
-    deState->index = dataPtr[2];
-    adpcm_decoder((char*)(dataPtr +4), (short*)ucOutBuff, len - 4, deState);
-    ucOutbuffSize = (len - 4) * 4;
-   
-    return true;
+    deState->valprev = (short)(((data[1] << 8) & 0xff) | (data[0] & 0xff));
+    deState->index = data[2];
+    adpcm_decoder((char*)(data +4), (short*)ucOutBuff, size - 4, deState);
+    return (size - 4) * 4;
 }
 
 bool SharTalkAudio::isSpeechPresent(const short* pcm, int sampleCount, int threshold)
@@ -310,6 +274,6 @@ bool SharTalkAudio::isSpeechPresent(const short* pcm, int sampleCount, int thres
     }
 
     int avgAmplitude = sumAbs / sampleCount;
-    //printf("\nsim: %s, avg: %d, count: %d sum:%lld\n", currentSIM.c_str(), avgAmplitude, sampleCount, sumAbs);
+    //printf("sim: %s, avg: %d, count: %d sum:%lld\n", currentSIM.c_str(), avgAmplitude, sampleCount, sumAbs);
     return avgAmplitude > threshold;
 }

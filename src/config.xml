@@ -1,5 +1,4 @@
 <config>
 <httpserver>http://192.168.0.101:8084</httpserver>
 <audioport>9191</audioport>
-<bcdlenght>6</bcdlenght>
 </config>
