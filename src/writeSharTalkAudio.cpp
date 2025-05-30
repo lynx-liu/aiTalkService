@@ -1,10 +1,14 @@
 #include <unistd.h>
 #include <cstddef>
 #include <cstring>
+#include <thread>
 #include "writeSharTalkAudio.h"
+
+#define WAIT_MAIN_SIM_TIME  2000 //ms
 
 struct GroupAudioInfo {
     std::string mainSIM;
+    uint64_t timestamp;
     std::map<std::string, audioType> simMap;
 };
 
@@ -70,6 +74,8 @@ void SharTalkAudio::reint()
             if (groupInfo.mainSIM == currentSIM) {
                 if (!simMap.empty()) {
                     groupInfo.mainSIM = simMap.begin()->first;
+                    groupInfo.timestamp = get_timestamp();
+                    sharHttSer->POST_update(groupInfo.mainSIM, 5);  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
                 } else {
                     groupInfo.mainSIM.clear();  // 当前组为空了
                 }
@@ -95,7 +101,7 @@ bool SharTalkAudio::sharInit(std::string sim, uint8_t loadType)
         if(!groupID.empty()){
             printf("groupID: %s\n", groupID.data()); 
             add_map(currentSIM, groupID);
-            return sharHttSer->POST_update(sim, 1);  //1.链接成功 2.离线  3. 正在进行 4.结束
+            return sharHttSer->POST_update(sim, 1);  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
         }
     }
     return false;
@@ -117,6 +123,8 @@ void SharTalkAudio::add_map(const std::string& sim, const std::string& groupId)
 
     if (groupInfo.mainSIM.empty()) {
         groupInfo.mainSIM = sim;
+        groupInfo.timestamp = get_timestamp();
+        sharHttSer->POST_update(groupInfo.mainSIM, 5);  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
     }
 
     printf("group size: %zu, currentGroup size: %zu\n", sharObjInfoMap.size(), simMap.size());
@@ -154,10 +162,21 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
 
     if(isSpeechPresent((short*)ucOutBuff, shortPcmSize)) {
         printf("isSpeechPresent: sim: %s, mainSIM: %s\n", currentSIM.c_str(), groupInfo.mainSIM.c_str());
+
+        int64_t currentTime = get_timestamp();
         if(currentSIM != groupInfo.mainSIM) {
-            groupInfo.mainSIM = currentSIM;
-            memset(deState, 0, sizeof(adpcm_state));
-            memset(enState, 0, sizeof(adpcm_state));
+            if(currentTime-groupInfo.timestamp>WAIT_MAIN_SIM_TIME) {
+                groupInfo.mainSIM = currentSIM;
+                groupInfo.timestamp = currentTime;
+                std::thread([this, groupInfo](){
+                    sharHttSer->POST_update(groupInfo.mainSIM, 5);  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
+                }).detach();
+
+                memset(deState, 0, sizeof(adpcm_state));
+                memset(enState, 0, sizeof(adpcm_state));
+            }
+        } else {
+            groupInfo.timestamp = currentTime;
         }
     }
     
