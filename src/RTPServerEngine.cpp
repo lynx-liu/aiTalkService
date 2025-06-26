@@ -6,7 +6,7 @@
 CRTPServerEngine::CRTPServerEngine(const int fd, const CONFIG ServerConfig)
 {
 	sockFd = fd;
-	_sharTalkstrue = new SharTalkAudio(ServerConfig.httpserver);
+	_sharTalkstrue = new SharTalkAudio(ServerConfig);
 }
 
 CRTPServerEngine::~CRTPServerEngine()

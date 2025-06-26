@@ -5,6 +5,7 @@
 typedef struct config
 {   
     char httpserver[128];
+    char aiserver[128];
     int  audioport;
 }CONFIG;
 

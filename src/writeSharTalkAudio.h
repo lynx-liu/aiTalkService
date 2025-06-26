@@ -11,7 +11,7 @@
 class SharTalkAudio
 {
 public:
-    SharTalkAudio(std::string baseUrl);
+    SharTalkAudio(const CONFIG ServerConfig);
     ~SharTalkAudio();
 
     bool sharInit(std::string sim, uint8_t loadType);
@@ -26,6 +26,8 @@ private:
     void alter_map(audioType& audioInfo);
     uint64_t get_timestamp();
     bool isSpeechPresent(const short* pcm, int sampleCount, int threshold = 500);
+
+    void appendPCMData(const uint8_t* pcm, size_t size);
     
 private:
     uint8_t  audio_type;
@@ -40,6 +42,12 @@ private:
     sharHttpSer* sharHttSer;
     std::string currentSIM;
     std::string groupID;
+
+    bool isSpeaking;
+    std::vector<uint8_t> recvPcm;
+    uint32_t offset;
+    
+    std::vector<uint8_t> pcmBuf;
 
     AudioDenoiser *pAudioDenoiser;
 };
