@@ -36,5 +36,5 @@ void del_audio_type_info(std::string sim)
     pthread_mutex_lock(&Audio_Type_Mutex);
     audiTypeInfo.erase(sim);
     pthread_mutex_unlock(&Audio_Type_Mutex);
-    printf("----------------- delete audio intfo: %s , size: %zu----------\n", sim.data(), audiTypeInfo.size());
+    printf("----------------- delete audio info: %s , size: %zu----------\n", sim.data(), audiTypeInfo.size());
 }

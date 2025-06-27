@@ -120,44 +120,45 @@ bool sharHttpSer::POST_update(std::string device, int state)
 std::vector<uint8_t> sharHttpSer::POST_pcm(const std::string& device, const std::vector<uint8_t>& pcmData) {
     std::vector<uint8_t> responseData;
     CURL* curl = curl_easy_init();
- 
-    if (!curl) {
-        return responseData; // 返回空向量表示錯誤
-    }
- 
+    if (!curl) return responseData;
+
     std::string url = voiceUrl + device;
- 
-    // 設置cURL選項
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
- 
-    // 創建一個臨時的cURL文件句柄，用於上傳數據
-    curl_mimepart* mimePart;
-    curl_mime* mime = curl_mime_init(curl);
-    mimePart = curl_mime_addpart(mime);
- 
-    // 設置文件名和數據
-    curl_mime_name(mimePart, "file"); // 表單字段名稱
-    curl_mime_filename(mimePart, "file"); // 虛擬文件名
-    curl_mime_data(mimePart, reinterpret_cast<const char*>(pcmData.data()), pcmData.size());
- 
-    // 將MIME數據設置到cURL
-    curl_easy_setopt(curl, CURLOPT_MIMEPOST, mime);
- 
-    // 設置響應數據的回調函數
+
+    const char* boundary = "----Boundary123456789";  // 固定边界字符串
+
+    // 构造 multipart/form-data 请求体
+    std::string body;
+    body += "--"; body += boundary; body += "\r\n";
+    body += "Content-Disposition: form-data; name=\"file\"; filename=\"file\"\r\n";
+    body += "Content-Type: application/octet-stream\r\n\r\n";
+    body.append(reinterpret_cast<const char*>(pcmData.data()), pcmData.size());
+    body += "\r\n--"; body += boundary; body += "--\r\n";
+
+    // 设置请求体
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)body.size());
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.data());
+
+    // 设置头部
+    struct curl_slist* headers = nullptr;
+    std::string contentType = "Content-Type: multipart/form-data; boundary=" + std::string(boundary);
+    headers = curl_slist_append(headers, contentType.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+    // 设定写回调和写入对象，保持和你原代码一致
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, BufferWriterFunc);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseData);
- 
-    // 執行請求
+
     CURLcode res = curl_easy_perform(curl);
- 
-    // 清理cURL句柄和MIME數據
-    curl_mime_free(mime);
+
+    curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
- 
+
     if (res != CURLE_OK) {
         responseData.clear();
     }
+
     return responseData;
 }
 
