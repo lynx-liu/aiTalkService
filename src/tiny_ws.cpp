@@ -158,7 +158,11 @@ void set_on_message(const std::string& sim, std::function<void(const std::vector
     std::lock_guard<std::mutex> lock(client_map_mutex);
     auto it = client_map.find(sim);
     if (it != client_map.end()) {
+        //已连接客户端，直接设置回调
         it->second.on_message = std::move(cb);
+    } else {
+        //未连接客户端，先插入记录（fd 设为 -1 表示尚未连接）
+        client_map[sim] = { -1, std::move(cb) };
     }
 }
 
@@ -232,7 +236,12 @@ void handle_client(int cli_fd) {
             sim.assign(frame.payload.begin(), frame.payload.end());
             {
                 std::lock_guard<std::mutex> lock(client_map_mutex);
-                client_map[sim] = {cli_fd, nullptr};
+                auto it = client_map.find(sim);
+                if (it != client_map.end()) {
+                    it->second.fd = cli_fd;// 已预注册的回调，更新 fd
+                } else {
+                    client_map[sim] = {cli_fd, nullptr};
+                }
                 printf("sim %s connected with fd %d\n", sim.c_str(), cli_fd);
             }
 

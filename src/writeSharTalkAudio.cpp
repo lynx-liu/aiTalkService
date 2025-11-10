@@ -75,6 +75,8 @@ void SharTalkAudio::reint()
     if(enState) memset(enState, 0, sizeof(adpcm_state));
 
     if (!currentSIM.empty()) {
+        tiny_ws::remove_on_message(currentSIM);
+        
         auto groupIt = sharObjInfoMap.find(groupID);
         if (groupIt != sharObjInfoMap.end()) {
             GroupAudioInfo& groupInfo = groupIt->second;
@@ -128,16 +130,15 @@ bool SharTalkAudio::sharInit(std::string sim, uint8_t loadType)
             webSocketFd=tiny_ws::get_client_fd(currentSIM);
             printf("webSocketFd: %d\n", webSocketFd);
             if(webSocketFd < 0) {// 不是平台对讲
-                if(sharHttSer->updateTalkingState(sim, 1))  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
-                    return true;
-                return false;
+                if(!sharHttSer->updateTalkingState(sim, 1))  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
+                    return false;
             }
   
             auto weak_this = std::weak_ptr<SharTalkAudio>(
                 std::static_pointer_cast<SharTalkAudio>(shared_from_this())
             );
 
-            // 平台对讲回调
+            // 平台对讲回调　或者ws未连接时预设回调
             tiny_ws::set_on_message(currentSIM, [weak_this](const std::vector<uint8_t>& data) {
                 printf("Received data size: %zu\n", data.size());
                 if (auto self = weak_this.lock()) {
