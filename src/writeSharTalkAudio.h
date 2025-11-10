@@ -5,10 +5,11 @@
 #include "shar_http.h"
 #include "AudioDenoiser.h"
 #include <algorithm> // 包含 std::find
+#include <mutex>
 
 #define BUFF_SIZE 1024
 
-class SharTalkAudio
+class SharTalkAudio : public std::enable_shared_from_this<SharTalkAudio>
 {
 public:
     SharTalkAudio(const CONFIG ServerConfig);
@@ -29,6 +30,9 @@ private:
 
     void appendPCMData(const uint8_t* pcm, size_t size);
     
+public:
+    std::string currentSIM;
+
 private:
     uint8_t  audio_type;
 
@@ -40,16 +44,21 @@ private:
     uint8_t* audioEncodeBuf;
 
     sharHttpSer* sharHttSer;
-    std::string currentSIM;
     std::string groupID;
+    int webSocketFd;
+    int type;//1:群組對講, 2:AI對講
 
     bool isSpeaking;
     std::vector<uint8_t> recvPcm;
     uint32_t offset;
+    std::mutex pcm_mutex;
     
     std::vector<uint8_t> pcmBuf;
 
     AudioDenoiser *pAudioDenoiser;
+
+    ResponseHeader responseHeader;
+    int64_t playingStartTime;
 };
 
 extern bool get_audio_type_info(std::string sim,audioType& audioInfo);

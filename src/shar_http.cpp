@@ -1,4 +1,5 @@
 #include "shar_http.h"
+#include <sstream>
 
 sharHttpSer::sharHttpSer(const CONFIG ServerConfig)
 {
@@ -8,6 +9,7 @@ sharHttpSer::sharHttpSer(const CONFIG ServerConfig)
 
     std::string aiserver = ServerConfig.aiserver;
     voiceUrl = aiserver+"/service.ai/textToVoice/talkFile/";
+    voiceStatusUrl = aiserver + "/service.ai/textToVoice/update";
 }
 
 sharHttpSer::~sharHttpSer()
@@ -20,8 +22,49 @@ size_t sharHttpSer::WriteCallback(void *contents, size_t size, size_t nmemb, std
     return size * nmemb;
 }
 
+size_t sharHttpSer::HeaderWriterFunc(void* contents, size_t size, size_t nmemb, ResponseHeader* responseHeader) {
+    size_t totalSize = size * nmemb;
+    if (totalSize > 0) {
+        std::string headerLine(reinterpret_cast<char*>(contents), totalSize);
 
-bool sharHttpSer::POST_request(std::string device, std::string& ID)
+        // 去掉行尾的 \r 和 \n
+        while (!headerLine.empty() && 
+              (headerLine.back() == '\r' || headerLine.back() == '\n')) {
+            headerLine.pop_back();
+        }
+
+        if (headerLine.empty()) {
+            // 空行 (headers 和 body 的分隔符)
+            return totalSize;
+        }
+
+        auto pos = headerLine.find(':');
+        if (pos != std::string::npos) {
+            std::string headerName  = headerLine.substr(0, pos);
+            std::string headerValue = headerLine.substr(pos + 1);
+
+            // 去掉前后空格和控制字符
+            headerName.erase(0, headerName.find_first_not_of(" \t\r\n"));
+            headerName.erase(headerName.find_last_not_of(" \t\r\n") + 1);
+            headerValue.erase(0, headerValue.find_first_not_of(" \t\r\n"));
+            headerValue.erase(headerValue.find_last_not_of(" \t\r\n") + 1);
+
+            //printf("Header: %s: %s\n", headerName.c_str(), headerValue.c_str());
+
+            if (headerName == "ad_hear_record_id") {
+                responseHeader->ad_hear_record_id = headerValue;
+            } else if (headerName == "x-file-type") {
+                responseHeader->x_file_type = headerValue;
+            }
+        }/* else {
+            // 不是 key:value 结构 (状态行等)
+            printf("Header: %s\n", headerLine.c_str());
+        }*/
+    }
+    return totalSize;
+}
+
+bool sharHttpSer::getTalkingInfo(std::string device, std::string& ID, int& type)
 {
     char postData[128] = {'\0'};
     sprintf(postData, "{\"deviceCode\":\"%s\"}", device.data());
@@ -45,15 +88,15 @@ bool sharHttpSer::POST_request(std::string device, std::string& ID)
         // 设置回调函数来处理响应数据
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
-        // 执行请求并获取响应
 
+        // 执行请求并获取响应
         CURLcode res = curl_easy_perform(curl);
         // 检查错误
         if (res != CURLE_OK) {
             std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
         } else {
             std::cout << "Response: " << readBuffer << std::endl;
-            getGoupId(ID);
+            getGoupId(ID, type);
         }
         // 清理CURL列表
         curl_slist_free_all(plist);
@@ -66,11 +109,11 @@ bool sharHttpSer::POST_request(std::string device, std::string& ID)
     ID = "debug_test_group";
 #endif
 
-    if(ID.empty()) ID = device;//AI对讲,以SIMh卡号虚拟出一个groupID
+    if(ID.empty()) ID = device;//AI对讲,以SIM卡号虚拟出一个groupID
     return !ID.empty();
 }
 
-void sharHttpSer::getGoupId(std::string& ID)
+void sharHttpSer::getGoupId(std::string& ID, int& type)
 {
 	Json::Reader reader;
 	Json::Value value;
@@ -78,10 +121,12 @@ void sharHttpSer::getGoupId(std::string& ID)
 	if (reader.parse(readBuffer, value)){
 		int code = value["code"].asInt();
         ID = value["data"]["id"].asString();
+        type = value["data"]["type"].asInt();
 	}
 }
 
-bool sharHttpSer::POST_update(std::string device, int state)
+//1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
+bool sharHttpSer::updateTalkingState(std::string device, int state)
 {
     bool result = false;
 	char postData[128] = {'\0'};
@@ -117,7 +162,44 @@ bool sharHttpSer::POST_update(std::string device, int state)
     return result;
 }
 
-std::vector<uint8_t> sharHttpSer::POST_pcm(const std::string& device, const std::vector<uint8_t>& pcmData) {
+// 更新广告播放状态, status:[02:完成，03:中断]
+bool sharHttpSer::updateVoiceState(std::string id, std::string status, int playingTime)
+{
+    bool result = false;
+	char postData[128] = {'\0'};
+	sprintf(postData, "{\"id\":\"%s\",\"status\":%s,\"playingTime\":%d}", id.data(), status.data(), playingTime);
+
+    CURL* curl = curl_easy_init();
+	if (curl)
+	{	
+		curl_easy_setopt(curl, CURLOPT_URL, voiceStatusUrl.c_str());
+        curl_easy_setopt(curl,CURLOPT_POST, 1);
+        struct curl_slist *plist = curl_slist_append(NULL, "Content-Type:application/json;charset=UTF-8");
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, plist);
+		curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData);
+		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+
+        std::string strResponse;
+		curl_easy_setopt(curl, CURLOPT_WRITEDATA, &strResponse);
+		
+        CURLcode res = curl_easy_perform(curl);
+		if (res != CURLE_OK)
+		{
+			std::cout << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+		}
+		else
+		{
+			std::cout << "strResponse is: " << strResponse << std::endl;
+            result = getResult(strResponse);
+		}
+
+        curl_slist_free_all(plist);
+		curl_easy_cleanup(curl);
+	}
+    return result;
+}
+
+std::vector<uint8_t> sharHttpSer::POST_pcm(const std::string& device, const std::vector<uint8_t>& pcmData, ResponseHeader& responseHeader) {
     std::vector<uint8_t> responseData;
     CURL* curl = curl_easy_init();
     if (!curl) return responseData;
@@ -146,10 +228,14 @@ std::vector<uint8_t> sharHttpSer::POST_pcm(const std::string& device, const std:
     headers = curl_slist_append(headers, contentType.c_str());
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
-    // 设定写回调和写入对象，保持和你原代码一致
+    // 设定写回调和写入对象
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, BufferWriterFunc);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseData);
 
+    // 设定头回调和写入对象
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, HeaderWriterFunc);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &responseHeader);
+        
     CURLcode res = curl_easy_perform(curl);
 
     curl_slist_free_all(headers);

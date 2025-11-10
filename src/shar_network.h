@@ -24,7 +24,6 @@ private:
 private:
     int port;
     struct sockaddr_in serveraddr;
-    epoll_event* event;
     int wsockFd;
     int epollfd;
 

@@ -36,6 +36,10 @@ int get_config(CONFIG* cfg)
 				if(req == NULL || req->QueryIntText(&s_config.audioport) != XML_SUCCESS)
 					break;
 
+				req = config->FirstChildElement("wsport");
+				if(req == NULL || req->QueryIntText(&s_config.wsport) != XML_SUCCESS)
+					break;
+
 				load = 1;
 
 			} while(0);
@@ -45,6 +49,7 @@ int get_config(CONFIG* cfg)
 			strncpy(s_config.httpserver, "https://wechat.che-mi.net", sizeof(s_config.httpserver));
 			strncpy(s_config.aiserver, "https://wechat.che-mi.net", sizeof(s_config.aiserver));
 			s_config.audioport = 9191;
+			s_config.wsport = 9000;
 		}
 	}
 	*cfg = s_config;

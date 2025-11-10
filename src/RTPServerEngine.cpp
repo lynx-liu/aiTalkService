@@ -1,76 +1,232 @@
 #include <cstring>
 #include <unistd.h>
 #include <memory>
+#include <sstream>
+#include <iomanip>
+#include <ctime>
+#include <openssl/md5.h>
+#include "tiny_ws.h"
 #include "RTPServerEngine.h"
+
+#define VIDEO_FRAME_SIZE (32 * BUFF_SIZE)
 
 CRTPServerEngine::CRTPServerEngine(const int fd, const CONFIG ServerConfig)
 {
 	sockFd = fd;
-	_sharTalkstrue = new SharTalkAudio(ServerConfig);
+	_sharTalkstrue = std::make_shared<SharTalkAudio>(ServerConfig);
 }
 
 CRTPServerEngine::~CRTPServerEngine()
 {
 	close(sockFd);
 
-	if(_sharTalkstrue){
-		delete _sharTalkstrue;
-		_sharTalkstrue = nullptr;
+	if (_sharTalkstrue) {
+		_sharTalkstrue->reint();
 	}
-}
 
-void CRTPServerEngine::reInit()
-{
-	close(sockFd);
-
-	if (_sharTalkstrue) _sharTalkstrue->reint();
 	if(!m_BCDSIMStr.empty()){
+		printf("\nremoved device SIM: %s\n", m_BCDSIMStr.c_str());
 		del_audio_type_info(m_BCDSIMStr);
 		m_BCDSIMStr.clear();
 	}
+
+	tiny_ws::remove_on_message(_sharTalkstrue->currentSIM);
+	_sharTalkstrue.reset();
 }
 
-bool CRTPServerEngine::ReadAndAnalyzeRTPPack()
+void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 {
-	uint8_t bcdLen = 6;
+	uint8_t bcdLen = 0;
 	RTP_PKG_HEADER header;
-	std::unique_ptr<uint8_t[]> data(new uint8_t[AUDIO_BUFF_SIZE]);
-	size_t nFixHeadSize = offsetof(RTP_PKG_HEADER, BCDSIMCardNumber) + 6;
+	std::unique_ptr<uint8_t[]> data(new uint8_t[BUFF_SIZE]);
+	size_t nFixHeadSize = offsetof(RTP_PKG_HEADER, Bt8timeStamp);
 	
+	std::shared_ptr<RtmpSender> m_RtmpSender;
+	std::vector<uint8_t> videoFrameBuf;
+
 	while(true) {
-		if(recv(sockFd, &header, nFixHeadSize, MSG_WAITALL)<=0)
-			return false;
+		memset(&header, 0, sizeof(RTP_PKG_HEADER));
+		int ret = recv(sockFd, &header, nFixHeadSize, MSG_WAITALL);
+		if(ret==0) break;
 		
-		if(header.BCDSIMCardNumber[0]==0x00 && header.BCDSIMCardNumber[1] == 0x00 && header.BCDSIMCardNumber[2] == 0x00 && header.BCDSIMCardNumber[3]  == 0x00) {
-			bcdLen = 10;
-			if(recv(sockFd, (uint8_t*)header.BCDSIMCardNumber + 6, sizeof(RTP_PKG_HEADER)-nFixHeadSize, MSG_WAITALL)<=0)
-				return false;
-		} else {
-			bcdLen = 6;
-			if(recv(sockFd, &header.Bt1LogicChannelNumber, sizeof(RTP_PKG_HEADER) - offsetof(RTP_PKG_HEADER, Bt1LogicChannelNumber), MSG_WAITALL)<=0)
-				return false;
+		if(ret < 0)
+		{
+			if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR || errno == ECONNRESET) {
+				continue;
+			}
+			printf("Failed to receive RTP header, fd=%d, err:%d\n", sockFd, errno);
+			break;
 		}
 
-		header.WdBodyLen = ntohs(header.WdBodyLen);/*
+		int DataType = (header.info >> 4) & 0x0F;
+		int subpackageHandleMark = header.info & 0x0F;
+
+		if(bcdLen <= 0)
+			bcdLen = getBcdLen(header.BCDSIMCardNumber, DataType, subpackageHandleMark);
+
+		int offset = 0;
+		if(bcdLen < 10) {
+			offset = 10 - bcdLen;
+			// 内存修正：将 Bt1LogicChannelNumber 及后续字段前移
+        	memmove(&header.Bt1LogicChannelNumber, header.BCDSIMCardNumber + bcdLen, 
+				nFixHeadSize - offsetof(RTP_PKG_HEADER, Bt1LogicChannelNumber) + offset);
+			// 清零多余的 SIM 号部分
+			memset(header.BCDSIMCardNumber + bcdLen, 0, offset);
+
+			DataType = (header.info >> 4) & 0x0F;
+			subpackageHandleMark = header.info & 0x0F;
+		}
+
+		if(DataType >= DATA_TYPE_TRANSM || subpackageHandleMark>PKG_FLAG_MIDDLE) {//透传数据不处理,包标错误不处理
+			printf("Unsupported DataType:0x%02X or subpackageHandleMark: %0d\n", DataType, subpackageHandleMark);
+			break;
+		}
+
+		if(recv(sockFd, (uint8_t*)&header.Bt8timeStamp+offset, sizeof(header.Bt8timeStamp)-offset, MSG_WAITALL)<=0) {
+			printf("Failed to receive RTP timestamp\n");
+			break;
+		}
+
+		if(DataType < DATA_TYPE_AUDIO) {//视频 Last IFrame Interval 与 Last Frame Interval
+			uint32_t videoTimestamp = 0;
+			if (recv(sockFd, &videoTimestamp, sizeof(videoTimestamp), MSG_WAITALL) <= 0) {
+				printf("Failed to receive video timestamp\n");
+				break;
+			}
+		}
+		
+		if(recv(sockFd, &header.WdBodyLen, sizeof(header.WdBodyLen), MSG_WAITALL)<=0) {
+			printf("Failed to receive RTP body length\n");
+			break;
+		}
+
+		header.WdBodyLen = ntohs(header.WdBodyLen);
 		header.WdPackageSequence = ntohs(header.WdPackageSequence);
 		header.Bt8timeStamp = ntohll(header.Bt8timeStamp);
-		header.DWFramHeadMark = ntohl(header.DWFramHeadMark);*/
+		header.DWFramHeadMark = ntohl(header.DWFramHeadMark);
+
+		if(header.WdBodyLen > BUFF_SIZE) {
+			printf("Body length %d exceeds buffer size\n", header.WdBodyLen);
+			break;
+		}
 
 		if(m_BCDSIMStr.empty()) {
 			get_device_SIM(header.BCDSIMCardNumber, bcdLen);
 
-			if(!insert_talk_info(data.get(), header, bcdLen))
-				return false;
-						
-			if(!_sharTalkstrue->sharInit(m_BCDSIMStr, header.type))
-				return false;
+			if(DataType == DATA_TYPE_AUDIO) {
+				if(!insert_talk_info(data.get(), header, bcdLen))
+					break;
+							
+				if(!_sharTalkstrue->sharInit(m_BCDSIMStr, header.type))
+					break;
+			} else {
+				if(videoFrameBuf.empty())
+					videoFrameBuf.reserve(VIDEO_FRAME_SIZE);
+				videoFrameBuf.clear();
+
+				std::string liveName = m_BCDSIMStr + "_" + std::to_string(header.Bt1LogicChannelNumber);
+				std::string rtmpUrl = "rtmp://192.168.0.85:1935/live/"+liveName;
+				if(bcdLen == 10) {
+					std::string key = "2bd8c611ec3498d791595df39669a904";
+					std::string timeHexStr = getPushTimeHexString();//获取有效时间戳
+					std::string secret = getMD5(key + liveName + timeHexStr);
+
+					rtmpUrl = "rtmp://test.livepush.che-mi.net/live/"+liveName+"?txSecret="+secret+"&txTime="+timeHexStr;
+				} else {
+					rtmpUrl = "rtmp://112.74.99.117:3935/live/"+liveName;
+				}
+				printf("RTMP URL: %s\n", rtmpUrl.c_str());
+
+				m_RtmpSender = std::make_shared<RtmpSender>();
+				if (!m_RtmpSender->Init(rtmpUrl)) {
+					m_RtmpSender.reset();
+					printf("Failed to initialize RTMP sender\n");
+					break;
+				}
+			}
 		}
 
-		if(recv(sockFd, data.get(), header.WdBodyLen, MSG_WAITALL)<=0)
-			return false;
-		_sharTalkstrue->write_shar_device(data.get(), header.WdBodyLen);
+#if DEBUG
+		switch(subpackageHandleMark) {
+			case PKG_FLAG_ATOM:
+				printf("Type:0x%02X, Len:%d, Channel: %d, timeStamp: %ld\n", DataType, header.WdBodyLen, header.Bt1LogicChannelNumber, header.Bt8timeStamp);
+				break;
+			case PKG_FLAG_FIRST:
+				printf("Type:0x%02X, Len:%d, Channel: %d, timeStamp: %ld,", DataType, header.WdBodyLen, header.Bt1LogicChannelNumber, header.Bt8timeStamp);
+				break;
+			case PKG_FLAG_LAST:
+				printf("\n");
+				break;
+			case PKG_FLAG_MIDDLE:
+				printf(" -");
+				break;
+		}
+#endif
+
+		if(recv(sockFd, data.get(), header.WdBodyLen, MSG_WAITALL)<=0) {
+			printf("\nFailed to receive RTP body");
+			break;
+		}
+
+		if(m_RtmpSender) {
+			if(DataType < DATA_TYPE_AUDIO) {
+				if(subpackageHandleMark == PKG_FLAG_ATOM || subpackageHandleMark == PKG_FLAG_FIRST) {
+					videoFrameBuf.clear();
+				}
+
+				if(videoFrameBuf.size() + header.WdBodyLen > videoFrameBuf.capacity()) {
+					printf("\nreserve Video frame buffer\n");
+					videoFrameBuf.reserve(videoFrameBuf.capacity() + VIDEO_FRAME_SIZE);
+				}
+
+				videoFrameBuf.insert(videoFrameBuf.end(), data.get(), data.get() + header.WdBodyLen);
+
+				if(subpackageHandleMark == PKG_FLAG_ATOM || subpackageHandleMark == PKG_FLAG_LAST) {
+					bool isKeyFrame = (DataType == DATA_TYPE_VIDE_I);
+					if (!m_RtmpSender->SendH264Frame(videoFrameBuf.data(), videoFrameBuf.size(), header.Bt8timeStamp, isKeyFrame)) {
+						printf("Failed to send H264 frame\n");
+						break;
+					}
+
+					videoFrameBuf.clear();
+				}
+			}
+		} else {
+			if(DataType == DATA_TYPE_AUDIO) {
+				_sharTalkstrue->write_shar_device(data.get(), header.WdBodyLen);
+			}
+		}
 	}
-	return true;
+
+	if(m_RtmpSender) {
+		m_RtmpSender->Close();
+		m_RtmpSender.reset();
+	}
+}
+
+//获取十六进制推流有效时间 (如:5DD435ED) 默认当前时间+12小时
+std::string CRTPServerEngine::getPushTimeHexString()
+{
+    std::ostringstream oss;
+    oss << std::uppercase << std::hex << static_cast<unsigned long>( time(nullptr) + 60 * 60 * 12 );
+    return oss.str();
+}
+
+ // 函数说明:防盗链KEYmd5加密
+std::string CRTPServerEngine::getMD5(const std::string& str)
+{
+    unsigned char md[16] = {0};
+    MD5_CTX ctx;
+    MD5_Init(&ctx);
+    MD5_Update(&ctx, reinterpret_cast<const unsigned char*>(str.data()), str.size());
+    MD5_Final(md, &ctx);
+
+    std::ostringstream oss;
+    oss << std::hex << std::setfill('0');
+    for (int i = 0; i < sizeof(md); ++i)
+        oss << std::setw(2) << static_cast<int>(md[i]);
+
+    return oss.str();
 }
 
 bool CRTPServerEngine::insert_talk_info(const uint8_t* data, RTP_PKG_HEADER &header, uint8_t bcdLen)
@@ -100,4 +256,12 @@ void CRTPServerEngine::get_device_SIM(uint8_t* bcdSim, uint8_t bcdLen)
 		sprintf(temp, "%02X", bcdSim[i]);
 		m_BCDSIMStr += temp;
 	}
+}
+
+int CRTPServerEngine::getBcdLen(uint8_t* bcdSim, int DataType, int subpackageHandleMark)
+{
+	if(bcdSim[0]==0x00 && bcdSim[1] == 0x00 && bcdSim[2] == 0x00 && bcdSim[3]  == 0x00
+		&& DataType <= DATA_TYPE_TRANSM && subpackageHandleMark <= PKG_FLAG_MIDDLE)
+		return 10;
+	return 6;
 }

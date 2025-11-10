@@ -1,13 +1,14 @@
 #include <cstring>
 #include <unistd.h>
 #include <fcntl.h>
+#include <arpa/inet.h>
+
 #include "shar_network.h"
 
 shar_network::shar_network(CONFIG config_, int threadNum):
 port(config_.audioport)
 {
     workPool = new Workpool(config_, threadNum);
-    event = new epoll_event();
     wsockFd = 0;
     epollfd = 0;
 }
@@ -17,11 +18,6 @@ shar_network::~shar_network()
     if(workPool){
         delete workPool;
         workPool = nullptr;
-    }
-
-    if(event){
-        delete event;
-        event = nullptr;
     }
 
     close(wsockFd);
@@ -41,7 +37,7 @@ bool shar_network::init_bindAdd_and_listen()
 	serveraddr.sin_addr.s_addr = htonl(INADDR_ANY);
 	serveraddr.sin_port=htons(port);
 	if(bind(wsockFd ,(struct sockaddr *)&serveraddr, sizeof(serveraddr)) < 0){
-		perror("BIND SERVER ADDR FAIL! ");
+		perror("bind");
         close(wsockFd);
 		return false;
 	}
@@ -59,13 +55,11 @@ int shar_network::setnonblocking(const int gSocketFd)
 }
 
 bool shar_network::SetAddrReuse(const int gSocketFd)
-{
-	int bReuseaddr=SO_REUSEADDR;
-	int RetSetVal = setsockopt(gSocketFd,SOL_SOCKET ,SO_REUSEADDR,(const char*)&bReuseaddr,sizeof(bReuseaddr));
+{//避免出现“Address already in use”错误
+	int val =1;
+	setsockopt(gSocketFd,SOL_SOCKET ,SO_REUSEADDR,(const char*)&val,sizeof(val));//允许服务器端口在关闭后快速重启，不必等 TIME_WAIT 结束
 
-    int val =1;
-	RetSetVal = setsockopt(gSocketFd, SOL_SOCKET, SO_REUSEPORT, &val, sizeof(val));
-	if (0 == RetSetVal){
+	if (0 == setsockopt(gSocketFd, SOL_SOCKET, SO_REUSEPORT, &val, sizeof(val))){//允许多个 socket（可以属于不同进程或线程）同时绑定同一个端口
 		printf("SET ADDR REUSE SUCCESS!\n");
 		return true;
 	}else {
@@ -97,16 +91,17 @@ bool shar_network::start_sharNetwork()
 
 bool shar_network::addfd(int fd, bool oneshot)
 {
-	//setnonblocking(fd);
-
-    // epoll_event event;
-    memset(event, 0, sizeof(epoll_event));
-	event->data.fd = fd;
-	event->events = EPOLLIN;
+    struct epoll_event event = {0};
+    memset(&event, 0, sizeof(epoll_event));
+	event.data.fd = fd;
+	event.events = EPOLLIN;
 	if(oneshot){
-		event->events |= EPOLLET;
-	}
-	epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, event);
+		event.events |= EPOLLONESHOT;
+	} else {
+        setnonblocking(fd);
+        event.events |= EPOLLET;
+    }
+	epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &event);
 
     return true;
 }
@@ -123,10 +118,8 @@ void shar_network::set_fd_keepalive(int fd)
     setsockopt(fd, SOL_TCP, TCP_KEEPINTVL, (void *)&keepInterval, sizeof(keepInterval));
     setsockopt(fd, SOL_TCP, TCP_KEEPCNT, (void *)&keepCount, sizeof(keepCount));
 
-    unsigned int timeout = 1000;
-    setsockopt(fd, IPPROTO_TCP, 18, &timeout, sizeof(timeout));
-    //setsockopt(socket_fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &timeout, sizeof(timeout));
-	//设置TCP_USER_TIMEOUT参数来判断tcp连接是否断开
+    unsigned int timeout = 1000;//设置TCP_USER_TIMEOUT参数来判断tcp连接是否断开
+    setsockopt(fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &timeout, sizeof(timeout));
 }
 
 void shar_network::run()
@@ -151,14 +144,15 @@ void shar_network::run()
                     printf("accept connect fail (_fd<0).\n");
                     continue;
                 }
+#if DEBUG
+                char ip[32] = {0};
+                inet_ntop(AF_INET, &clientaddr.sin_addr, ip, sizeof(ip));
+                printf("accept fd=%d, from %s:%d\n", _fd, ip, ntohs(clientaddr.sin_port));
+#endif
                 set_fd_keepalive(_fd);
                 addfd(_fd,true);
-                //printf("accept fd =%d\n", _fd);
             }else if(events[index].events & EPOLLIN){
-                // printf("============= _fd2 =%d\n", fd);
-
-                // webpoolObj->append_event(fd);
-                workPool->add_device_detonate_event(fd);
+                workPool->add_to_queue(fd);
                 epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
             }else if(events[index].events & (EPOLLIN | EPOLLRDHUP)){
                 printf("close fd.\n");
