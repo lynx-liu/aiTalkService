@@ -30,7 +30,6 @@ CRTPServerEngine::~CRTPServerEngine()
 		m_BCDSIMStr.clear();
 	}
 
-	tiny_ws::remove_on_message(_sharTalkstrue->currentSIM);
 	_sharTalkstrue.reset();
 }
 
