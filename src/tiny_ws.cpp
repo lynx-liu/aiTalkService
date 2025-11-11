@@ -267,16 +267,6 @@ void handle_client(int cli_fd) {
         }
     }
     close(cli_fd);
-
-    // 从映射表中移除该客户端
-    if (!sim.empty()) {
-        std::lock_guard<std::mutex> lock(client_map_mutex);
-        auto it = client_map.find(sim);
-        if (it != client_map.end()) {
-            it->second.on_message = nullptr;  // 先清空回调
-            client_map.erase(it);             // 再删除记录
-        }
-    }
 }
 
 int start(uint16_t port) {
