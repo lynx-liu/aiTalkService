@@ -51,6 +51,9 @@ int get_config(CONFIG* cfg)
 			s_config.audioport = 9191;
 			s_config.wsport = 9000;
 		}
+
+		printf("httpserver: %s\n", s_config.httpserver);
+		printf("aiserver: %s\n", s_config.aiserver);
 	}
 	*cfg = s_config;
 	return 0;

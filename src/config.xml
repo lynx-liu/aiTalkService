@@ -1,4 +1,5 @@
-<config21<httpserver>http://192.168.0.101:8084</httpserver>
+<config>
+<httpserver>http://192.168.0.101:8084</httpserver>
 <aiserver>http://192.168.0.101:8099</aiserver>
 <audioport>9191</audioport>
 <wsport>9000</wsport>
