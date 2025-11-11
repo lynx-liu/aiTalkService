@@ -6,6 +6,12 @@ namespace tiny_ws {
 std::unordered_map<std::string, ClientInfo> client_map;
 std::mutex client_map_mutex;
 
+inline std::string getShortSIM(const std::string& sim)
+{
+    size_t pos = sim.find_first_not_of('0');
+    return (pos == std::string::npos) ? "0" : sim.substr(pos);
+}
+
 std::string base64_encode(const unsigned char* input, size_t length) {
     static const char b64_chars[] =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -134,10 +140,12 @@ int get_client_fd(const std::string& sim, int timeout_ms) {
     std::chrono::milliseconds timeout(timeout_ms);
     std::chrono::milliseconds sleep_time(100); // 每次休眠 100 毫秒
 
+    std::string shortSIM = getShortSIM(sim);
+
     while (true) {
         {
             std::lock_guard<std::mutex> lock(tiny_ws::client_map_mutex);
-            auto it = tiny_ws::client_map.find(sim);
+            auto it = tiny_ws::client_map.find(shortSIM);
             if (it != tiny_ws::client_map.end()) {
                 return it->second.fd; // 找到对应的 fd
             }
@@ -155,22 +163,29 @@ int get_client_fd(const std::string& sim, int timeout_ms) {
 }
 
 void set_on_message(const std::string& sim, std::function<void(const std::vector<uint8_t>&)> cb) {
+    printf("set_on_message for sim: %s\n", sim.c_str());
     std::lock_guard<std::mutex> lock(client_map_mutex);
-    auto it = client_map.find(sim);
+    std::string shortSIM = getShortSIM(sim);
+
+    auto it = client_map.find(shortSIM);
     if (it != client_map.end()) {
         //已连接客户端，直接设置回调
         it->second.on_message = std::move(cb);
     } else {
         //未连接客户端，先插入记录（fd 设为 -1 表示尚未连接）
-        client_map[sim] = { -1, std::move(cb) };
+        client_map[shortSIM] = { -1, std::move(cb) };
     }
 }
 
 void remove_on_message(const std::string& sim) {
+    printf("Removing on_message for SIM: %s\n", sim.c_str());
     std::lock_guard<std::mutex> lock(client_map_mutex);
-    auto it = client_map.find(sim);
+    std::string shortSIM = getShortSIM(sim);
+
+    auto it = client_map.find(shortSIM);
     if (it != client_map.end()) {
-        it->second.on_message = nullptr;
+        it->second.on_message = nullptr;  // 先清空回调
+        client_map.erase(it);             // 再删除记录
     }
 }
 
@@ -234,6 +249,9 @@ void handle_client(int cli_fd) {
         } else {
             // 将 SIM 卡号和客户端 fd 存储到映射表中
             sim.assign(frame.payload.begin(), frame.payload.end());
+            printf("sim %s connected with fd %d\n", sim.c_str(), cli_fd);
+            sim = getShortSIM(sim);
+
             {
                 std::lock_guard<std::mutex> lock(client_map_mutex);
                 auto it = client_map.find(sim);
@@ -242,7 +260,6 @@ void handle_client(int cli_fd) {
                 } else {
                     client_map[sim] = {cli_fd, nullptr};
                 }
-                printf("sim %s connected with fd %d\n", sim.c_str(), cli_fd);
             }
 
             uint8_t response[] = "success";

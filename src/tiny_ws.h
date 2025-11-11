@@ -27,6 +27,7 @@
 
 namespace tiny_ws {
 
+inline std::string getShortSIM(const std::string& sim);
 std::string base64_encode(const unsigned char* input, size_t length);
 
 void make_handshake(const char* key, char* out);
