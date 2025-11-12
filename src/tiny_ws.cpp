@@ -163,7 +163,7 @@ int get_client_fd(const std::string& sim, int timeout_ms) {
 }
 
 void set_on_message(const std::string& sim, std::function<void(const std::vector<uint8_t>&)> cb) {
-    printf("set_on_message for sim: %s\n", sim.c_str());
+    //printf("set_on_message for sim: %s\n", sim.c_str());
     std::lock_guard<std::mutex> lock(client_map_mutex);
     std::string shortSIM = getShortSIM(sim);
 
@@ -178,7 +178,7 @@ void set_on_message(const std::string& sim, std::function<void(const std::vector
 }
 
 void remove_on_message(const std::string& sim) {
-    printf("Removing on_message for SIM: %s\n", sim.c_str());
+    //printf("Removing on_message for SIM: %s\n", sim.c_str());
     std::lock_guard<std::mutex> lock(client_map_mutex);
     std::string shortSIM = getShortSIM(sim);
 
