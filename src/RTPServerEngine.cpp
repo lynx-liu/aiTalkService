@@ -132,7 +132,7 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 
 					rtmpUrl = "rtmp://test.livepush.che-mi.net/live/"+liveName+"?txSecret="+secret+"&txTime="+timeHexStr;
 				} else {
-					rtmpUrl = "rtmp://112.74.99.117:3935/live/"+liveName;
+					rtmpUrl = "rtmp://127.0.0.1:3935/live/"+liveName;// 本机公网IP:112.74.99.117
 				}
 				printf("RTMP URL: %s\n", rtmpUrl.c_str());
 
