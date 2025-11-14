@@ -59,8 +59,6 @@ private:
 
     ResponseHeader responseHeader;
     int64_t playingStartTime;//广告播放开始时间,用于统计广告播放时长
-    int64_t lastActionTime;//最后一次操作时间
-    int waitingResponseCnt;//等待响应计数
 };
 
 extern bool get_audio_type_info(std::string sim,audioType& audioInfo);

@@ -1,8 +1,10 @@
 #include <thread>
+#include "../json/json.h"
 #include "tiny_ws.h"
 
 namespace tiny_ws {
 
+int type = 0;
 std::unordered_map<std::string, ClientInfo> client_map;
 std::mutex client_map_mutex;
 
@@ -162,29 +164,36 @@ int get_client_fd(const std::string& sim, int timeout_ms) {
     }
 }
 
-void set_on_message(const std::string& sim, std::function<void(const std::vector<uint8_t>&)> cb) {
-    //printf("set_on_message for sim: %s\n", sim.c_str());
+void set_callback(const std::string& sim, std::function<void(const std::vector<uint8_t>&)> cbMessage,
+                  std::function<void(int type)> cbType) {
+    //printf("set_callback for sim: %s\n", sim.c_str());
     std::lock_guard<std::mutex> lock(client_map_mutex);
     std::string shortSIM = getShortSIM(sim);
 
     auto it = client_map.find(shortSIM);
     if (it != client_map.end()) {
         //已连接客户端，直接设置回调
-        it->second.on_message = std::move(cb);
+        it->second.on_message = std::move(cbMessage);
+        it->second.on_type = std::move(cbType);
+
+        if(it->second.on_type) {
+            it->second.on_type(type);
+        }
     } else {
         //未连接客户端，先插入记录（fd 设为 -1 表示尚未连接）
-        client_map[shortSIM] = { -1, std::move(cb) };
+        client_map[shortSIM] = { -1, std::move(cbMessage), std::move(cbType)};
     }
 }
 
-void remove_on_message(const std::string& sim) {
-    //printf("Removing on_message for SIM: %s\n", sim.c_str());
+void remove_callback(const std::string& sim) {
+    //printf("remove_callback for SIM: %s\n", sim.c_str());
     std::lock_guard<std::mutex> lock(client_map_mutex);
     std::string shortSIM = getShortSIM(sim);
 
     auto it = client_map.find(shortSIM);
     if (it != client_map.end()) {
         it->second.on_message = nullptr;  // 先清空回调
+        it->second.on_type = nullptr;
         client_map.erase(it);             // 再删除记录
     }
 }
@@ -248,15 +257,52 @@ void handle_client(int cli_fd) {
             }
         } else {
             // 将 SIM 卡号和客户端 fd 存储到映射表中
-            sim.assign(frame.payload.begin(), frame.payload.end());
-            printf("sim %s connected with fd %d\n", sim.c_str(), cli_fd);
-            sim = getShortSIM(sim);
+            // 支持两种协议：
+            // 1) 纯文本 SIM 字符串
+            // 2) JSON 对象，包含 "deviceCode" (字符串) 和 "type" (整数)
+            std::string payloadStr(frame.payload.begin(), frame.payload.end());
+            printf("recv: %s connected with fd %d\n", payloadStr.c_str(), cli_fd);
+
+            // 根据是否包含大括号判断是否为 JSON（简单判断），若包含则尝试用项目 JSON 库解析并提取 deviceCode
+            if (payloadStr.find('{') != std::string::npos) {
+                Json::Reader reader;
+                Json::Value value;
+                if (reader.parse(payloadStr, value)){
+                    type = value["type"].asInt();
+                    sim = getShortSIM(value["deviceCode"].asString());
+
+                    std::lock_guard<std::mutex> lock(client_map_mutex);
+                    auto it = client_map.find(sim);
+                    if (it != client_map.end() && it->second.on_type) {
+                        it->second.on_type(type);
+                    }
+                }
+            } else {
+                sim = getShortSIM(payloadStr);
+            }
 
             {
                 std::lock_guard<std::mutex> lock(client_map_mutex);
                 auto it = client_map.find(sim);
                 if (it != client_map.end()) {
-                    it->second.fd = cli_fd;// 已预注册的回调，更新 fd
+                    if(it->second.fd<=0) {// 已预注册的回调，更新 fd
+                        it->second.fd = cli_fd;
+                    } else {
+                        if(type==0) {// 新的平台连接，优先级最高
+                            printf("replace ws, SIM: %s\n", sim.c_str());
+                            close(it->second.fd); // 关闭旧连接
+                            it->second.fd = cli_fd;
+                        } else {// 新连接不是平台连接，保持原连接不变，不允许新连接
+                            printf("reject ws, SIM: %s\n", sim.c_str());
+                            uint8_t response[] = "failure";
+                            send_frame(cli_fd, BIN, response, sizeof(response)-1);
+                            break;
+                        }
+
+                        if(it->second.on_type) {
+                            it->second.on_type(type);
+                        }
+                    }
                 } else {
                     client_map[sim] = {cli_fd, nullptr};
                 }

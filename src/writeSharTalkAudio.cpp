@@ -6,8 +6,12 @@
 #include "writeSharTalkAudio.h"
 
 #define WAIT_MAIN_SIM_TIME  2000 //ms
-#define WAIT_IDLE_TIME      5000 //ms
-#define PCM_FRAME_SIZE  640
+#define PCM_FRAME_SIZE      640
+
+#define TYPE_WS_WEB_TALK    0x00 //通过websocket平台对讲
+#define TYPE_GROUP_TALK     0x01 //群组对讲
+#define TYPE_AI_TALK        0x02 //AI对讲
+#define TYPE_WS_VAR_TALK    0x04 //多变量通知触发的对讲
 
 struct GroupAudioInfo {
     std::string mainSIM;
@@ -67,8 +71,6 @@ void SharTalkAudio::reint()
     pcmBuf.clear();
     webSocketFd = -1;
     playingStartTime = 0;
-    lastActionTime = 0;
-    waitingResponseCnt = 0;
 
     responseHeader.ad_hear_record_id.clear();
     responseHeader.x_file_type.clear();
@@ -79,7 +81,7 @@ void SharTalkAudio::reint()
     if(enState) memset(enState, 0, sizeof(adpcm_state));
 
     if (!currentSIM.empty()) {
-        tiny_ws::remove_on_message(currentSIM);
+        tiny_ws::remove_callback(currentSIM);
         
         auto groupIt = sharObjInfoMap.find(groupID);
         if (groupIt != sharObjInfoMap.end()) {
@@ -103,7 +105,7 @@ void SharTalkAudio::reint()
             }
         }
     
-        if(type==1) {
+        if(type&TYPE_GROUP_TALK) {
             sharHttSer->updateTalkingState(currentSIM, 4);
         }
         currentSIM.clear();
@@ -124,8 +126,6 @@ bool SharTalkAudio::sharInit(std::string sim, uint8_t loadType)
     type = 0;
     webSocketFd = -1;
     playingStartTime = 0;
-    lastActionTime = get_timestamp();
-    waitingResponseCnt = 0;
 
     responseHeader.ad_hear_record_id.clear();
     responseHeader.x_file_type.clear();
@@ -140,10 +140,6 @@ bool SharTalkAudio::sharInit(std::string sim, uint8_t loadType)
             if(webSocketFd < 0) {// 不是平台对讲
                 if(!sharHttSer->updateTalkingState(sim, 1))  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
                     return false;
-
-                if(type==0) {//多变量通过ws语音通知
-                    type = 3; //自定义3为多变量通知 触发的对讲
-                }
             }
   
             auto weak_this = std::weak_ptr<SharTalkAudio>(
@@ -151,13 +147,18 @@ bool SharTalkAudio::sharInit(std::string sim, uint8_t loadType)
             );
 
             // 平台对讲回调　或者ws未连接时预设回调
-            tiny_ws::set_on_message(currentSIM, [weak_this](const std::vector<uint8_t>& data) {
+            tiny_ws::set_callback(currentSIM, [weak_this](const std::vector<uint8_t>& data) {
                 printf("Received data size: %zu\n", data.size());
                 if (auto self = weak_this.lock()) {
                     std::lock_guard<std::mutex> lock(self->pcm_mutex);
                     if (self->recvPcm.size() < PCM_FRAME_SIZE*1024) {
                         self->recvPcm.insert(self->recvPcm.end(), data.begin(), data.end());
                     }
+                }
+            }, [weak_this](int type) {
+                if (auto self = weak_this.lock()) {
+                    self->type |= type;
+                    printf("Received type change: %d\n", self->type);
                 }
             });
             return true;
@@ -183,7 +184,7 @@ void SharTalkAudio::add_map(const std::string& sim, const std::string& groupId)
     if (groupInfo.mainSIM.empty()) {
         groupInfo.mainSIM = sim;
         groupInfo.timestamp = get_timestamp();
-        if(type==1) {
+        if(type&TYPE_GROUP_TALK) {
             sharHttSer->updateTalkingState(groupInfo.mainSIM, 5);  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
         }
     }
@@ -228,7 +229,7 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
             isSpeaking = true;
             printf("%s isSpeaking = true\n", currentSIM.c_str());
 
-            if(type==2) {//AI对讲
+            if(type&TYPE_AI_TALK) {//AI对讲
                 pcmBuf.clear();
             }
         }
@@ -247,32 +248,26 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
         } else {
             groupInfo.timestamp = currentTime;
         }
-        lastActionTime = currentTime;
     } else if(isSpeaking && currentTime-groupInfo.timestamp>WAIT_MAIN_SIM_TIME){//司机停止讲话
         isSpeaking = false;
-        lastActionTime = currentTime;
         printf("%s isSpeaking = false\n", currentSIM.c_str());
 
-        if(type==2 || type==3) {//AI对讲或多变量对讲
-            waitingResponseCnt++;
-            std::thread([this](){
-                offset = 0;
-                recvPcm = sharHttSer->POST_pcm(currentSIM, pcmBuf, responseHeader);
-                printf("pcm size: %zu, id: %s, type: %s\n", recvPcm.size(), responseHeader.ad_hear_record_id.c_str(), responseHeader.x_file_type.c_str());
-                if(responseHeader.x_file_type=="02") {//广告
-                    playingStartTime = get_timestamp();
+        if(type&TYPE_AI_TALK || type&TYPE_WS_VAR_TALK) {//AI对讲或多变量对讲
+            auto weak_this = std::weak_ptr<SharTalkAudio>(
+                std::static_pointer_cast<SharTalkAudio>(shared_from_this())
+            );
+            
+            std::thread([weak_this]() {
+                if (auto self = weak_this.lock()) {
+                    self->offset = 0;
+                    self->recvPcm = self->sharHttSer->POST_pcm(self->currentSIM, self->pcmBuf, self->responseHeader);
+                    printf("pcm size: %zu, id: %s, type: %s\n", self->recvPcm.size(), self->responseHeader.ad_hear_record_id.c_str(), self->responseHeader.x_file_type.c_str());
+                    if (self->responseHeader.x_file_type == "02") { // 广告
+                        self->playingStartTime = self->get_timestamp();
+                    }
                 }
-
-                lastActionTime = get_timestamp();
-                if(waitingResponseCnt>0)
-                    waitingResponseCnt--;
             }).detach();
         }
-    } else if(!isSpeaking && type==3 && currentTime-lastActionTime>WAIT_IDLE_TIME && waitingResponseCnt<=0) {//多变量对讲空闲超时
-        printf("idle timeout\n");
-        sharHttSer->updateVoiceState(currentSIM, "02"/*完成*/, -1);
-        lastActionTime = get_timestamp();
-        return false;
     }
     
     if(currentSIM != groupInfo.mainSIM || groupID.empty()){
@@ -287,7 +282,7 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
         audioType& audioInfo = simPair.second;
 
         if (sim == currentSIM) {
-            if(type==0) { //平台对讲
+            if(type==TYPE_WS_WEB_TALK) { //平台对讲
                 if(webSocketFd >= 0) {//平台对讲
                     tiny_ws::send_bin(webSocketFd, ucOutBuff, shortPcmSize*sizeof(short));
                 }
@@ -302,9 +297,9 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
                     alter_map(audioInfo);
                 }
                 return true;
-            } else if(type==1) { //群组对讲
+            } else if(type&TYPE_GROUP_TALK) { //群组对讲
                 continue;//群组对讲不需要发送给自己
-            } else if(type==2 || type==3) {//AI对讲或多变量对讲
+            } else if(type&TYPE_AI_TALK || type&TYPE_WS_VAR_TALK) {//AI对讲或多变量对讲
                 if(isSpeaking) {
                     if(playingStartTime>0) {//广告
                         int64_t playingTime = get_timestamp()-playingStartTime;
@@ -320,7 +315,6 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
                     if(recvPcm.empty())
                         return true;
 
-                    lastActionTime = currentTime;
                     if(offset+PCM_FRAME_SIZE<=recvPcm.size()) {
                         if(offset==0) {
                             memset(deState, 0, sizeof(adpcm_state));
