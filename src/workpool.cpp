@@ -36,7 +36,7 @@ bool Workpool::create_task()
 {
     pthread_t task_pid;
     if(pthread_create(&task_pid,NULL,_task_thread,this)!=0){
-        printf("create task thread fail\n");
+        printf("\ncreate task thread fail");
         return false;
     }
     return true;

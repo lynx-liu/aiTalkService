@@ -25,7 +25,7 @@ CRTPServerEngine::~CRTPServerEngine()
 	}
 
 	if(!m_BCDSIMStr.empty()){
-		printf("\nremoved device SIM: %s\n", m_BCDSIMStr.c_str());
+		printf("\nremoved device SIM: %s", m_BCDSIMStr.c_str());
 		del_audio_type_info(m_BCDSIMStr);
 		m_BCDSIMStr.clear();
 	}
@@ -53,7 +53,7 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 			if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR || errno == ECONNRESET) {
 				continue;
 			}
-			printf("Failed to receive RTP header, fd=%d, err:%d\n", sockFd, errno);
+			printf("\nFailed to receive RTP header, fd=%d, err:%d", sockFd, errno);
 			break;
 		}
 
@@ -77,25 +77,25 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 		}
 
 		if(DataType >= DATA_TYPE_TRANSM || subpackageHandleMark>PKG_FLAG_MIDDLE) {//透传数据不处理,包标错误不处理
-			printf("Unsupported DataType:0x%02X or subpackageHandleMark: %0d\n", DataType, subpackageHandleMark);
+			printf("\nUnsupported DataType:0x%02X or subpackageHandleMark: %0d", DataType, subpackageHandleMark);
 			break;
 		}
 
 		if(recv(sockFd, (uint8_t*)&header.Bt8timeStamp+offset, sizeof(header.Bt8timeStamp)-offset, MSG_WAITALL)<=0) {
-			printf("Failed to receive RTP timestamp\n");
+			printf("\nFailed to receive RTP timestamp");
 			break;
 		}
 
 		if(DataType < DATA_TYPE_AUDIO) {//视频 Last IFrame Interval 与 Last Frame Interval
 			uint32_t videoTimestamp = 0;
 			if (recv(sockFd, &videoTimestamp, sizeof(videoTimestamp), MSG_WAITALL) <= 0) {
-				printf("Failed to receive video timestamp\n");
+				printf("\nFailed to receive video timestamp");
 				break;
 			}
 		}
 		
 		if(recv(sockFd, &header.WdBodyLen, sizeof(header.WdBodyLen), MSG_WAITALL)<=0) {
-			printf("Failed to receive RTP body length\n");
+			printf("\nFailed to receive RTP body length");
 			break;
 		}
 
@@ -105,7 +105,7 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 		header.DWFramHeadMark = ntohl(header.DWFramHeadMark);
 
 		if(header.WdBodyLen > BUFF_SIZE) {
-			printf("Body length %d exceeds buffer size\n", header.WdBodyLen);
+			printf("\nBody length %d exceeds buffer size", header.WdBodyLen);
 			break;
 		}
 
@@ -134,12 +134,12 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 				} else {
 					rtmpUrl = "rtmp://127.0.0.1:3935/live/"+liveName;// 本机公网IP:112.74.99.117
 				}
-				printf("RTMP URL: %s\n", rtmpUrl.c_str());
+				printf("\nRTMP URL: %s", rtmpUrl.c_str());
 
 				m_RtmpSender = std::make_shared<RtmpSender>();
 				if (!m_RtmpSender->Init(rtmpUrl)) {
 					m_RtmpSender.reset();
-					printf("Failed to initialize RTMP sender\n");
+					printf("\nFailed to initialize RTMP sender");
 					break;
 				}
 			}
@@ -148,10 +148,10 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 #if DEBUG
 		switch(subpackageHandleMark) {
 			case PKG_FLAG_ATOM:
-				printf("Type:0x%02X, Len:%d, Channel: %d, timeStamp: %ld\n", DataType, header.WdBodyLen, header.Bt1LogicChannelNumber, header.Bt8timeStamp);
+				printf("\nType:0x%02X, Len:%d, Channel: %d, timeStamp: %ld", DataType, header.WdBodyLen, header.Bt1LogicChannelNumber, header.Bt8timeStamp);
 				break;
 			case PKG_FLAG_FIRST:
-				printf("Type:0x%02X, Len:%d, Channel: %d, timeStamp: %ld,", DataType, header.WdBodyLen, header.Bt1LogicChannelNumber, header.Bt8timeStamp);
+				printf("\nType:0x%02X, Len:%d, Channel: %d, timeStamp: %ld,", DataType, header.WdBodyLen, header.Bt1LogicChannelNumber, header.Bt8timeStamp);
 				break;
 			case PKG_FLAG_LAST:
 				printf("\n");
@@ -174,7 +174,7 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 				}
 
 				if(videoFrameBuf.size() + header.WdBodyLen > videoFrameBuf.capacity()) {
-					printf("\nreserve Video frame buffer\n");
+					printf("\nreserve Video frame buffer");
 					videoFrameBuf.reserve(videoFrameBuf.capacity() + VIDEO_FRAME_SIZE);
 				}
 
@@ -183,7 +183,7 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 				if(subpackageHandleMark == PKG_FLAG_ATOM || subpackageHandleMark == PKG_FLAG_LAST) {
 					bool isKeyFrame = (DataType == DATA_TYPE_VIDE_I);
 					if (!m_RtmpSender->SendH264Frame(videoFrameBuf.data(), videoFrameBuf.size(), header.Bt8timeStamp, isKeyFrame)) {
-						printf("Failed to send H264 frame\n");
+						printf("\nFailed to send H264 frame");
 						break;
 					}
 

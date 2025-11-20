@@ -21,7 +21,7 @@ public:
 private:
     int ADPCM_decode(uint8_t *data, uint16_t size);
     int audio_decoder(uint8_t *data, uint16_t size);
-    bool push_to_device(int shortPcmSize, audioType& audioInfo);
+    bool push_to_device(const uint8_t* pcm, int shortPcmSize, audioType& audioInfo);
     bool write_data(audioType& audioInfo, uint16_t BodyLen);
     void add_map(const std::string& sim, const std::string& groupId);
     void alter_map(audioType& audioInfo);
@@ -29,7 +29,9 @@ private:
     bool isSpeechPresent(const short* pcm, int sampleCount, int threshold = 500);
 
     void appendPCMData(const uint8_t* pcm, size_t size);
-    
+    bool wsplayback(audioType& audioInfo, const uint8_t* pcm, int shortPcmSize);
+    bool httpplayback(audioType& audioInfo, const uint8_t* pcm, int shortPcmSize);
+
 public:
     std::string currentSIM;
 
@@ -49,7 +51,8 @@ private:
     int type;//1:群組對講, 2:AI對講
 
     bool isSpeaking;
-    std::vector<uint8_t> recvPcm;
+    std::vector<uint8_t> wsRecvPcm;//ws接收的pcm数据缓存
+    std::vector<uint8_t> httpRecvPcm;//http接收的pcm数据缓存
     uint32_t offset;
     std::mutex pcm_mutex;
     

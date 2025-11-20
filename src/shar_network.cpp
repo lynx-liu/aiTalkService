@@ -28,7 +28,7 @@ bool shar_network::init_bindAdd_and_listen()
 {
     wsockFd = socket(AF_INET, SOCK_STREAM, 0);
 	if(wsockFd < 0){
-		printf("CREATE SOCKET ERROR!\n");
+		printf("\nCREATE SOCKET ERROR!");
 		return false;
 	}
     SetAddrReuse(wsockFd);
@@ -60,10 +60,10 @@ bool shar_network::SetAddrReuse(const int gSocketFd)
 	setsockopt(gSocketFd,SOL_SOCKET ,SO_REUSEADDR,(const char*)&val,sizeof(val));//允许服务器端口在关闭后快速重启，不必等 TIME_WAIT 结束
 
 	if (0 == setsockopt(gSocketFd, SOL_SOCKET, SO_REUSEPORT, &val, sizeof(val))){//允许多个 socket（可以属于不同进程或线程）同时绑定同一个端口
-		printf("SET ADDR REUSE SUCCESS!\n");
+		printf("\nSET ADDR REUSE SUCCESS!");
 		return true;
 	}else {
-        printf("SET ADDR REUSE FAILE!\n");
+        printf("\nSET ADDR REUSE FAILE!");
 		return false;
 	}
 }
@@ -141,13 +141,13 @@ void shar_network::run()
             if(fd == wsockFd){
                 _fd = accept(fd, (struct sockaddr *)&clientaddr, &m_clilen);
                 if(_fd < 0){
-                    printf("accept connect fail (_fd<0).\n");
+                    printf("\naccept connect fail (_fd:%d).", _fd);
                     continue;
                 }
 #if DEBUG
                 char ip[32] = {0};
                 inet_ntop(AF_INET, &clientaddr.sin_addr, ip, sizeof(ip));
-                printf("accept fd=%d, from %s:%d\n", _fd, ip, ntohs(clientaddr.sin_port));
+                printf("\naccept fd=%d, from %s:%d", _fd, ip, ntohs(clientaddr.sin_port));
 #endif
                 set_fd_keepalive(_fd);
                 addfd(_fd,true);
@@ -155,7 +155,7 @@ void shar_network::run()
                 workPool->add_to_queue(fd);
                 epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
             }else if(events[index].events & (EPOLLIN | EPOLLRDHUP)){
-                printf("close fd.\n");
+                printf("\nclose fd.");
             }
         }
     }

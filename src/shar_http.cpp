@@ -49,7 +49,7 @@ size_t sharHttpSer::HeaderWriterFunc(void* contents, size_t size, size_t nmemb, 
             headerValue.erase(0, headerValue.find_first_not_of(" \t\r\n"));
             headerValue.erase(headerValue.find_last_not_of(" \t\r\n") + 1);
 
-            //printf("Header: %s: %s\n", headerName.c_str(), headerValue.c_str());
+            //printf("\nHeader: %s: %s", headerName.c_str(), headerValue.c_str());
 
             if (headerName == "ad_hear_record_id") {
                 responseHeader->ad_hear_record_id = headerValue;
@@ -58,7 +58,7 @@ size_t sharHttpSer::HeaderWriterFunc(void* contents, size_t size, size_t nmemb, 
             }
         }/* else {
             // 不是 key:value 结构 (状态行等)
-            printf("Header: %s\n", headerLine.c_str());
+            printf("\nHeader: %s", headerLine.c_str());
         }*/
     }
     return totalSize;
@@ -68,7 +68,7 @@ bool sharHttpSer::getTalkingInfo(std::string device, std::string& ID, int& type)
 {
     char postData[128] = {'\0'};
     sprintf(postData, "{\"deviceCode\":\"%s\"}", device.data());
-    printf("deviceCode : %s\n", postData);
+    printf("\ndeviceCode : %s", postData);
     readBuffer.clear();
  
     ID.clear();
@@ -93,9 +93,9 @@ bool sharHttpSer::getTalkingInfo(std::string device, std::string& ID, int& type)
         CURLcode res = curl_easy_perform(curl);
         // 检查错误
         if (res != CURLE_OK) {
-            std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+            printf("\ncurl_easy_perform() failed: %s", curl_easy_strerror(res));
         } else {
-            std::cout << "Response: " << readBuffer << std::endl;
+            printf("\nResponse: %s", readBuffer.data());
             getGoupId(ID, type);
         }
         // 清理CURL列表
@@ -148,11 +148,11 @@ bool sharHttpSer::updateTalkingState(std::string device, int state)
         CURLcode res = curl_easy_perform(curl);
 		if (res != CURLE_OK)
 		{
-			std::cout << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+			printf("\ncurl_easy_perform() failed: %s", curl_easy_strerror(res));
 		}
 		else
 		{
-			std::cout << "strResponse is: " << strResponse << std::endl;
+			printf("\nstrResponse is: %s", strResponse.data());
             result = getResult(strResponse);
 		}
 
@@ -185,11 +185,11 @@ bool sharHttpSer::updateVoiceState(std::string id, std::string status, int playi
         CURLcode res = curl_easy_perform(curl);
 		if (res != CURLE_OK)
 		{
-			std::cout << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+			printf("\ncurl_easy_perform() failed: %s", curl_easy_strerror(res));
 		}
 		else
 		{
-			std::cout << "strResponse is: " << strResponse << std::endl;
+			printf("\nstrResponse is: %s", strResponse.data());
             result = getResult(strResponse);
 		}
 

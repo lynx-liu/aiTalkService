@@ -4,7 +4,6 @@
 
 namespace tiny_ws {
 
-int type = 0;
 std::unordered_map<std::string, ClientInfo> client_map;
 std::mutex client_map_mutex;
 
@@ -165,28 +164,35 @@ int get_client_fd(const std::string& sim, int timeout_ms) {
 }
 
 void set_callback(const std::string& sim, std::function<void(const std::vector<uint8_t>&)> cbMessage,
-                  std::function<void(int type)> cbType) {
-    //printf("set_callback for sim: %s\n", sim.c_str());
-    std::lock_guard<std::mutex> lock(client_map_mutex);
+                  std::function<void(int type)> cbType, std::function<void(int type)> cbDisconnect) {
+    printf("\nset_callback for sim: %s", sim.c_str());
+
+    int type = 0;
+    std::function<void(int)> cb;
     std::string shortSIM = getShortSIM(sim);
 
-    auto it = client_map.find(shortSIM);
-    if (it != client_map.end()) {
-        //已连接客户端，直接设置回调
-        it->second.on_message = std::move(cbMessage);
-        it->second.on_type = std::move(cbType);
+    {//不要持有锁调用回调函数，避免死锁
+        std::lock_guard<std::mutex> lock(client_map_mutex);
+        auto it = client_map.find(shortSIM);
+        if (it != client_map.end()) {
+            //已连接客户端，直接设置回调
+            it->second.on_message = std::move(cbMessage);
+            it->second.on_type = std::move(cbType);
+            it->second.on_disconnect = std::move(cbDisconnect);
 
-        if(it->second.on_type) {
-            it->second.on_type(type);
+            cb = it->second.on_type;
+            type = it->second.type;
+        } else {
+            //未连接客户端，先插入记录（fd 设为 -1 表示尚未连接）
+            client_map[shortSIM] = { -1, 0, std::move(cbMessage), std::move(cbType), std::move(cbDisconnect) };
         }
-    } else {
-        //未连接客户端，先插入记录（fd 设为 -1 表示尚未连接）
-        client_map[shortSIM] = { -1, std::move(cbMessage), std::move(cbType)};
     }
+
+    if(cb) cb(type);// 释放锁后再调用回调函数
 }
 
 void remove_callback(const std::string& sim) {
-    //printf("remove_callback for SIM: %s\n", sim.c_str());
+    printf("\nremove_callback for SIM: %s", sim.c_str());
     std::lock_guard<std::mutex> lock(client_map_mutex);
     std::string shortSIM = getShortSIM(sim);
 
@@ -194,6 +200,7 @@ void remove_callback(const std::string& sim) {
     if (it != client_map.end()) {
         it->second.on_message = nullptr;  // 先清空回调
         it->second.on_type = nullptr;
+        it->second.on_disconnect = nullptr;
         client_map.erase(it);             // 再删除记录
     }
 }
@@ -202,21 +209,21 @@ void handle_client(int cli_fd) {
     char buffer[4096], key[WS_KEY_LEN + 1], accept_key[WS_ACC_LEN + 1];
     ssize_t n = read(cli_fd, buffer, sizeof(buffer) - 1);
     if (n <= 0) { 
-        printf("Failed to read from client\n");
+        printf("\nFailed to read from client");
         close(cli_fd); 
         return; 
     }
     buffer[n] = '\0';
 
-    //printf("Received handshake request:\n%s\n", buffer);
+    //printf("\nReceived handshake request:\n%s", buffer);
 
     if (!parse_handshake(buffer, key)) { 
-        printf("Failed to parse handshake\n");
+        printf("\nFailed to parse handshake");
         close(cli_fd); 
         return; 
     }
 
-    //printf("Parsed Sec-WebSocket-Key: %s\n", key);
+    //printf("\nParsed Sec-WebSocket-Key: %s", key);
 
     make_handshake(key, accept_key);
 
@@ -229,17 +236,18 @@ void handle_client(int cli_fd) {
     snprintf(response, sizeof(response), fmt, accept_key);
     write(cli_fd, response, strlen(response));
 
-    //printf("Sent handshake response:\n%s\n", response);
+    //printf("\nSent handshake response:\n%s", response);
 
+    int type = 0; // 客户端类型
     std::string sim; // 局部变量保存 SIM
 
     while (true) {
         Frame frame;
         if (!read_frame(cli_fd, frame)) {
-            printf("Failed to read frame from client\n");
+            printf("\nFailed to read frame from client");
             break;
         }
-        //printf("Received frame: fin=%d, opcode=%d, mask=%d, payload_len=%zu\n", frame.fin, frame.opcode, frame.mask, frame.payload_len);
+        //printf("\nReceived frame: fin=%d, opcode=%d, mask=%d, payload_len=%zu", frame.fin, frame.opcode, frame.mask, frame.payload_len);
         if (frame.opcode == CLOSE) break;
         if (frame.opcode == PING) {
             send_frame(cli_fd, PONG, frame.payload.data(), frame.payload.size());
@@ -247,8 +255,9 @@ void handle_client(int cli_fd) {
         }
         bool binary = (frame.opcode == BIN);
         if (binary) {
-            //printf("Received binary frame of size %zu\n", frame.payload.size());
+            printf("*");
             if (!sim.empty()) {
+                //printf("\nReceived binary frame of size %zu", frame.payload.size());
                 std::lock_guard<std::mutex> lock(client_map_mutex);
                 auto it = client_map.find(sim);
                 if (it != client_map.end() && it->second.on_message) {
@@ -261,7 +270,7 @@ void handle_client(int cli_fd) {
             // 1) 纯文本 SIM 字符串
             // 2) JSON 对象，包含 "deviceCode" (字符串) 和 "type" (整数)
             std::string payloadStr(frame.payload.begin(), frame.payload.end());
-            printf("recv: %s connected with fd %d\n", payloadStr.c_str(), cli_fd);
+            printf("\nrecv: %s connected with fd %d", payloadStr.c_str(), cli_fd);
 
             // 根据是否包含大括号判断是否为 JSON（简单判断），若包含则尝试用项目 JSON 库解析并提取 deviceCode
             if (payloadStr.find('{') != std::string::npos) {
@@ -270,49 +279,61 @@ void handle_client(int cli_fd) {
                 if (reader.parse(payloadStr, value)){
                     type = value["type"].asInt();
                     sim = getShortSIM(value["deviceCode"].asString());
-
-                    std::lock_guard<std::mutex> lock(client_map_mutex);
-                    auto it = client_map.find(sim);
-                    if (it != client_map.end() && it->second.on_type) {
-                        it->second.on_type(type);
-                    }
                 }
             } else {
                 sim = getShortSIM(payloadStr);
             }
 
-            {
+            std::function<void(int)> cb;
+            {//不要持有锁调用回调函数，避免死锁
                 std::lock_guard<std::mutex> lock(client_map_mutex);
                 auto it = client_map.find(sim);
                 if (it != client_map.end()) {
+                    it->second.type = type;
+
                     if(it->second.fd<=0) {// 已预注册的回调，更新 fd
                         it->second.fd = cli_fd;
+                        printf("\nupdate ws, SIM: %s", sim.c_str());
                     } else {
                         if(type==0) {// 新的平台连接，优先级最高
-                            printf("replace ws, SIM: %s\n", sim.c_str());
+                            printf("\nreplace ws, SIM: %s", sim.c_str());
                             close(it->second.fd); // 关闭旧连接
                             it->second.fd = cli_fd;
                         } else {// 新连接不是平台连接，保持原连接不变，不允许新连接
-                            printf("reject ws, SIM: %s\n", sim.c_str());
+                            printf("\nreject ws, SIM: %s", sim.c_str());
                             uint8_t response[] = "failure";
                             send_frame(cli_fd, BIN, response, sizeof(response)-1);
                             break;
                         }
-
-                        if(it->second.on_type) {
-                            it->second.on_type(type);
-                        }
                     }
+
+                    cb = it->second.on_type;
+
                 } else {
-                    client_map[sim] = {cli_fd, nullptr};
+                    client_map[sim] = {cli_fd, type, nullptr, nullptr, nullptr};
+                    printf("\nnew ws, SIM: %s", sim.c_str());
                 }
             }
+            if(cb) cb(type); // 释放锁后再调用回调函数
 
             uint8_t response[] = "success";
             send_frame(cli_fd, BIN, response, sizeof(response)-1);
         }
     }
     close(cli_fd);
+    
+    std::function<void(int)> cb;
+    {//不要持有锁调用回调函数，避免死锁
+        std::lock_guard<std::mutex> lock(client_map_mutex);
+        auto it = client_map.find(sim);
+        if (it != client_map.end()) {
+            it->second.fd = -1; // 标记为未连接
+            cb = it->second.on_disconnect;
+            type = it->second.type;
+            it->second.type = 0; // 重置类型
+        }
+    }
+    if(cb) cb(type);// 释放锁后再调用回调函数
 }
 
 int start(uint16_t port) {
@@ -328,13 +349,13 @@ int start(uint16_t port) {
     addr.sin_port = htons(port);
 
     if (bind(srv, (sockaddr*)&addr, sizeof(addr)) < 0) {
-        perror("ws bind"); close(srv); return -1;
+        perror("\nws bind"); close(srv); return -1;
     }
     if (listen(srv, 128) < 0) {
-        perror("listen"); close(srv); return -1;
+        perror("\nlisten"); close(srv); return -1;
     }
 
-    printf(">>> ws://0.0.0.0:%d\n", port);
+    printf("\n>>> ws://0.0.0.0:%d", port);
     while (true) {
         int cli = accept(srv, nullptr, nullptr);
         if (cli < 0) { perror("accept"); continue; }

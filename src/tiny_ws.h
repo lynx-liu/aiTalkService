@@ -52,8 +52,10 @@ struct Frame {
 
 struct ClientInfo {
     int fd;
+    int type;
     std::function<void(const std::vector<uint8_t>& data)> on_message;
     std::function<void(int type)> on_type;
+    std::function<void(int type)> on_disconnect;
 };
 
 bool read_frame(int fd, Frame& frame);
@@ -72,7 +74,7 @@ extern std::mutex client_map_mutex;
 int get_client_fd(const std::string& sim, int timeout_ms = 0);
 
 void set_callback(const std::string& sim, std::function<void(const std::vector<uint8_t>&)> cbMessage,
-                  std::function<void(int type)> cbType = nullptr);
+                  std::function<void(int type)> cbType, std::function<void(int type)> cbDisconnect);
 
 void remove_callback(const std::string& sim);
 
