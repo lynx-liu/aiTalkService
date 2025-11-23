@@ -465,7 +465,6 @@ bool SharTalkAudio::write_data(audioType& audioInfo, uint16_t BodyLen)
 	if(!(write(audioInfo.socketFd, &pkg, offsetof(RTP_PKG_HEADER, BCDSIMCardNumber)+audioInfo.BCDSIMLen) &&
         write(audioInfo.socketFd, (uint8_t*)&pkg + offsetof(RTP_PKG_HEADER, Bt1LogicChannelNumber), sizeof(RTP_PKG_HEADER) - offsetof(RTP_PKG_HEADER, Bt1LogicChannelNumber))))
     {
-        close(audioInfo.socketFd);
 		perror("\nerrno:");
 		return false;
 	}
@@ -474,7 +473,6 @@ bool SharTalkAudio::write_data(audioType& audioInfo, uint16_t BodyLen)
 	do{
         int size = write(audioInfo.socketFd, audioEncodeBuf+count, BodyLen-count);
 		if(size < 0){
-            close(audioInfo.socketFd);
 			perror("\nerrno:");
 			return false;
 		}
