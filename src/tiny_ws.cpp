@@ -1,5 +1,6 @@
 #include <thread>
 #include "../json/json.h"
+#include "debug.h"
 #include "tiny_ws.h"
 
 namespace tiny_ws {
@@ -165,7 +166,7 @@ int get_client_fd(const std::string& sim, int timeout_ms) {
 
 void set_callback(const std::string& sim, std::function<void(const std::vector<uint8_t>&)> cbMessage,
                   std::function<void(int type)> cbType, std::function<void(int type)> cbDisconnect) {
-    printf("\nset_callback for sim: %s", sim.c_str());
+    printf("\n%sset_callback for sim: %s", getNowTime().data(), sim.c_str());
 
     int type = 0;
     std::function<void(int)> cb;
@@ -192,7 +193,7 @@ void set_callback(const std::string& sim, std::function<void(const std::vector<u
 }
 
 void remove_callback(const std::string& sim) {
-    printf("\nremove_callback for SIM: %s", sim.c_str());
+    printf("\n%sremove_callback for SIM: %s", getNowTime().data(), sim.c_str());
     std::lock_guard<std::mutex> lock(client_map_mutex);
     std::string shortSIM = getShortSIM(sim);
 
@@ -209,21 +210,21 @@ void handle_client(int cli_fd) {
     char buffer[4096], key[WS_KEY_LEN + 1], accept_key[WS_ACC_LEN + 1];
     ssize_t n = read(cli_fd, buffer, sizeof(buffer) - 1);
     if (n <= 0) { 
-        printf("\nFailed to read from client");
+        printf("\n%sFailed to read from client", getNowTime().data());
         close(cli_fd); 
         return; 
     }
     buffer[n] = '\0';
 
-    //printf("\nReceived handshake request:\n%s", buffer);
+    //printf("\n%sReceived handshake request:\n%s", getNowTime().data(), buffer);
 
     if (!parse_handshake(buffer, key)) { 
-        printf("\nFailed to parse handshake");
+        printf("\n%sFailed to parse handshake", getNowTime().data());
         close(cli_fd); 
         return; 
     }
 
-    //printf("\nParsed Sec-WebSocket-Key: %s", key);
+    //printf("\n%sParsed Sec-WebSocket-Key: %s", getNowTime().data(), key);
 
     make_handshake(key, accept_key);
 
@@ -236,7 +237,7 @@ void handle_client(int cli_fd) {
     snprintf(response, sizeof(response), fmt, accept_key);
     write(cli_fd, response, strlen(response));
 
-    //printf("\nSent handshake response:\n%s", response);
+    //printf("\n%sSent handshake response:\n%s", getNowTime().data(), response);
 
     int type = 0; // 客户端类型
     std::string sim; // 局部变量保存 SIM
@@ -244,10 +245,10 @@ void handle_client(int cli_fd) {
     while (true) {
         Frame frame;
         if (!read_frame(cli_fd, frame)) {
-            printf("\nFailed to read frame from client");
+            printf("\n%sFailed to read frame from client", getNowTime().data());
             break;
         }
-        //printf("\nReceived frame: fin=%d, opcode=%d, mask=%d, payload_len=%zu", frame.fin, frame.opcode, frame.mask, frame.payload_len);
+        //printf("\n%sReceived frame: fin=%d, opcode=%d, mask=%d, payload_len=%zu", getNowTime().data(), frame.fin, frame.opcode, frame.mask, frame.payload_len);
         if (frame.opcode == CLOSE) break;
         if (frame.opcode == PING) {
             send_frame(cli_fd, PONG, frame.payload.data(), frame.payload.size());
@@ -257,7 +258,7 @@ void handle_client(int cli_fd) {
         if (binary) {
             printf("*");
             if (!sim.empty()) {
-                //printf("\nReceived binary frame of size %zu", frame.payload.size());
+                //printf("\n%sReceived binary frame of size %zu", getNowTime().data(), frame.payload.size());
                 std::lock_guard<std::mutex> lock(client_map_mutex);
                 auto it = client_map.find(sim);
                 if (it != client_map.end() && it->second.on_message) {
@@ -270,7 +271,7 @@ void handle_client(int cli_fd) {
             // 1) 纯文本 SIM 字符串
             // 2) JSON 对象，包含 "deviceCode" (字符串) 和 "type" (整数)
             std::string payloadStr(frame.payload.begin(), frame.payload.end());
-            printf("\nrecv: %s connected with fd %d", payloadStr.c_str(), cli_fd);
+            printf("\n%srecv: %s connected with fd %d", getNowTime().data(), payloadStr.c_str(), cli_fd);
 
             // 根据是否包含大括号判断是否为 JSON（简单判断），若包含则尝试用项目 JSON 库解析并提取 deviceCode
             if (payloadStr.find('{') != std::string::npos) {
@@ -293,14 +294,14 @@ void handle_client(int cli_fd) {
 
                     if(it->second.fd<=0) {// 已预注册的回调，更新 fd
                         it->second.fd = cli_fd;
-                        printf("\nupdate ws, SIM: %s", sim.c_str());
+                        printf("\n%supdate ws, SIM: %s", getNowTime().data(), sim.c_str());
                     } else {
                         if(type==0) {// 新的平台连接，优先级最高
-                            printf("\nreplace ws, SIM: %s", sim.c_str());
+                            printf("\n%sreplace ws, SIM: %s", getNowTime().data(), sim.c_str());
                             close(it->second.fd); // 关闭旧连接
                             it->second.fd = cli_fd;
                         } else {// 新连接不是平台连接，保持原连接不变，不允许新连接
-                            printf("\nreject ws, SIM: %s", sim.c_str());
+                            printf("\n%sreject ws, SIM: %s", getNowTime().data(), sim.c_str());
                             uint8_t response[] = "failure";
                             send_frame(cli_fd, BIN, response, sizeof(response)-1);
                             break;
@@ -311,7 +312,7 @@ void handle_client(int cli_fd) {
 
                 } else {
                     client_map[sim] = {cli_fd, type, nullptr, nullptr, nullptr};
-                    printf("\nnew ws, SIM: %s", sim.c_str());
+                    printf("\n%snew ws, SIM: %s", getNowTime().data(), sim.c_str());
                 }
             }
             if(cb) cb(type); // 释放锁后再调用回调函数
@@ -355,7 +356,7 @@ int start(uint16_t port) {
         perror("\nlisten"); close(srv); return -1;
     }
 
-    printf("\n>>> ws://0.0.0.0:%d", port);
+    printf("\n%s>>> ws://0.0.0.0:%d", getNowTime().data(), port);
     while (true) {
         int cli = accept(srv, nullptr, nullptr);
         if (cli < 0) { perror("accept"); continue; }

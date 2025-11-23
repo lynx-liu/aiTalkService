@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include "debug.h"
 #include "workpool.h"
 
 Workpool::Workpool(CONFIG config_, int threNum):
@@ -36,7 +37,7 @@ bool Workpool::create_task()
 {
     pthread_t task_pid;
     if(pthread_create(&task_pid,NULL,_task_thread,this)!=0){
-        printf("\ncreate task thread fail");
+        printf("\n%screate task thread fail", getNowTime().data());
         return false;
     }
     return true;

@@ -1,4 +1,5 @@
 #include "config.h"
+#include "debug.h"
 #include "tinyxml2.h"
 
 using namespace tinyxml2;
@@ -20,14 +21,14 @@ int get_config(CONFIG* cfg)
 					
 				XMLElement* req = config->FirstChildElement("httpserver");
 				if(req == NULL) {
-                    printf("get httpserver fail!\n");
+                    printf("%sget httpserver fail!\n", getNowTime().data());
                     break;
                 }
 				strncpy(s_config.httpserver, req->GetText(), sizeof(s_config.httpserver) - 1);
  
 				req = config->FirstChildElement("aiserver");
 				if(req == NULL) {
-                    printf("get aiserver fail!\n");
+                    printf("%sget aiserver fail!\n", getNowTime().data());
                     break;
                 }
 				strncpy(s_config.aiserver, req->GetText(), sizeof(s_config.aiserver) - 1);
@@ -52,8 +53,8 @@ int get_config(CONFIG* cfg)
 			s_config.wsport = 9000;
 		}
 
-		printf("httpserver: %s\n", s_config.httpserver);
-		printf("aiserver: %s\n", s_config.aiserver);
+		printf("%shttpserver: %s\n", getNowTime().data(), s_config.httpserver);
+		printf("%saiserver: %s\n", getNowTime().data(), s_config.aiserver);
 	}
 	*cfg = s_config;
 	return 0;

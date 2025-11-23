@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <ctime>
 #include <openssl/md5.h>
+#include "debug.h"
 #include "tiny_ws.h"
 #include "RTPServerEngine.h"
 
@@ -25,7 +26,7 @@ CRTPServerEngine::~CRTPServerEngine()
 	}
 
 	if(!m_BCDSIMStr.empty()){
-		printf("\nremoved device SIM: %s", m_BCDSIMStr.c_str());
+		printf("\n%sremoved device SIM: %s", getNowTime().data(), m_BCDSIMStr.c_str());
 		del_audio_type_info(m_BCDSIMStr);
 		m_BCDSIMStr.clear();
 	}
@@ -53,7 +54,7 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 			if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR || errno == ECONNRESET) {
 				continue;
 			}
-			printf("\nFailed to receive RTP header, fd=%d, err:%d", sockFd, errno);
+			printf("\n%sFailed to receive RTP header, fd=%d, err:%d", getNowTime().data(), sockFd, errno);
 			break;
 		}
 
@@ -77,25 +78,25 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 		}
 
 		if(DataType >= DATA_TYPE_TRANSM || subpackageHandleMark>PKG_FLAG_MIDDLE) {//透传数据不处理,包标错误不处理
-			printf("\nUnsupported DataType:0x%02X or subpackageHandleMark: %0d", DataType, subpackageHandleMark);
+			printf("\n%sUnsupported DataType:0x%02X or subpackageHandleMark: %0d", getNowTime().data(), DataType, subpackageHandleMark);
 			break;
 		}
 
 		if(recv(sockFd, (uint8_t*)&header.Bt8timeStamp+offset, sizeof(header.Bt8timeStamp)-offset, MSG_WAITALL)<=0) {
-			printf("\nFailed to receive RTP timestamp");
+			printf("\n%sFailed to receive RTP timestamp", getNowTime().data());
 			break;
 		}
 
 		if(DataType < DATA_TYPE_AUDIO) {//视频 Last IFrame Interval 与 Last Frame Interval
 			uint32_t videoTimestamp = 0;
 			if (recv(sockFd, &videoTimestamp, sizeof(videoTimestamp), MSG_WAITALL) <= 0) {
-				printf("\nFailed to receive video timestamp");
+				printf("\n%sFailed to receive video timestamp", getNowTime().data());
 				break;
 			}
 		}
 		
 		if(recv(sockFd, &header.WdBodyLen, sizeof(header.WdBodyLen), MSG_WAITALL)<=0) {
-			printf("\nFailed to receive RTP body length");
+			printf("\n%sFailed to receive RTP body length", getNowTime().data());
 			break;
 		}
 
@@ -105,7 +106,7 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 		header.DWFramHeadMark = ntohl(header.DWFramHeadMark);
 
 		if(header.WdBodyLen > BUFF_SIZE) {
-			printf("\nBody length %d exceeds buffer size", header.WdBodyLen);
+			printf("\n%sBody length %d exceeds buffer size", getNowTime().data(), header.WdBodyLen);
 			break;
 		}
 
@@ -134,12 +135,12 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 				} else {
 					rtmpUrl = "rtmp://127.0.0.1:3935/live/"+liveName;// 本机公网IP:112.74.99.117
 				}
-				printf("\nRTMP URL: %s", rtmpUrl.c_str());
+				printf("\n%sRTMP URL: %s", getNowTime().data(), rtmpUrl.c_str());
 
 				m_RtmpSender = std::make_shared<RtmpSender>();
 				if (!m_RtmpSender->Init(rtmpUrl)) {
 					m_RtmpSender.reset();
-					printf("\nFailed to initialize RTMP sender");
+					printf("\n%sFailed to initialize RTMP sender", getNowTime().data());
 					break;
 				}
 			}
@@ -148,10 +149,10 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 #if DEBUG
 		switch(subpackageHandleMark) {
 			case PKG_FLAG_ATOM:
-				printf("\nType:0x%02X, Len:%d, Channel: %d, timeStamp: %ld", DataType, header.WdBodyLen, header.Bt1LogicChannelNumber, header.Bt8timeStamp);
+				printf("\n%sType:0x%02X, Len:%d, Channel: %d, timeStamp: %ld", getNowTime().data(), DataType, header.WdBodyLen, header.Bt1LogicChannelNumber, header.Bt8timeStamp);
 				break;
 			case PKG_FLAG_FIRST:
-				printf("\nType:0x%02X, Len:%d, Channel: %d, timeStamp: %ld,", DataType, header.WdBodyLen, header.Bt1LogicChannelNumber, header.Bt8timeStamp);
+				printf("\n%sType:0x%02X, Len:%d, Channel: %d, timeStamp: %ld,", getNowTime().data(), DataType, header.WdBodyLen, header.Bt1LogicChannelNumber, header.Bt8timeStamp);
 				break;
 			case PKG_FLAG_LAST:
 				printf("\n");
@@ -163,7 +164,7 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 #endif
 
 		if(recv(sockFd, data.get(), header.WdBodyLen, MSG_WAITALL)<=0) {
-			printf("\nFailed to receive RTP body");
+			printf("\n%sFailed to receive RTP body", getNowTime().data());
 			break;
 		}
 
@@ -174,7 +175,7 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 				}
 
 				if(videoFrameBuf.size() + header.WdBodyLen > videoFrameBuf.capacity()) {
-					printf("\nreserve Video frame buffer");
+					printf("\n%sreserve Video frame buffer", getNowTime().data());
 					videoFrameBuf.reserve(videoFrameBuf.capacity() + VIDEO_FRAME_SIZE);
 				}
 
@@ -183,7 +184,7 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 				if(subpackageHandleMark == PKG_FLAG_ATOM || subpackageHandleMark == PKG_FLAG_LAST) {
 					bool isKeyFrame = (DataType == DATA_TYPE_VIDE_I);
 					if (!m_RtmpSender->SendH264Frame(videoFrameBuf.data(), videoFrameBuf.size(), header.Bt8timeStamp, isKeyFrame)) {
-						printf("\nFailed to send H264 frame");
+						printf("\n%sFailed to send H264 frame", getNowTime().data());
 						break;
 					}
 

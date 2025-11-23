@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <arpa/inet.h>
 
+#include "debug.h"
 #include "shar_network.h"
 
 shar_network::shar_network(CONFIG config_, int threadNum):
@@ -28,7 +29,7 @@ bool shar_network::init_bindAdd_and_listen()
 {
     wsockFd = socket(AF_INET, SOCK_STREAM, 0);
 	if(wsockFd < 0){
-		printf("\nCREATE SOCKET ERROR!");
+		printf("\n%sCREATE SOCKET ERROR!", getNowTime().data());
 		return false;
 	}
     SetAddrReuse(wsockFd);
@@ -60,10 +61,10 @@ bool shar_network::SetAddrReuse(const int gSocketFd)
 	setsockopt(gSocketFd,SOL_SOCKET ,SO_REUSEADDR,(const char*)&val,sizeof(val));//允许服务器端口在关闭后快速重启，不必等 TIME_WAIT 结束
 
 	if (0 == setsockopt(gSocketFd, SOL_SOCKET, SO_REUSEPORT, &val, sizeof(val))){//允许多个 socket（可以属于不同进程或线程）同时绑定同一个端口
-		printf("\nSET ADDR REUSE SUCCESS!");
+		printf("\n%sSET ADDR REUSE SUCCESS!", getNowTime().data());
 		return true;
 	}else {
-        printf("\nSET ADDR REUSE FAILE!");
+        printf("\n%sSET ADDR REUSE FAILE!", getNowTime().data());
 		return false;
 	}
 }
@@ -141,13 +142,13 @@ void shar_network::run()
             if(fd == wsockFd){
                 _fd = accept(fd, (struct sockaddr *)&clientaddr, &m_clilen);
                 if(_fd < 0){
-                    printf("\naccept connect fail (_fd:%d).", _fd);
+                    printf("\n%saccept connect fail (_fd:%d).", getNowTime().data(), _fd);
                     continue;
                 }
 #if DEBUG
                 char ip[32] = {0};
                 inet_ntop(AF_INET, &clientaddr.sin_addr, ip, sizeof(ip));
-                printf("\naccept fd=%d, from %s:%d", _fd, ip, ntohs(clientaddr.sin_port));
+                printf("\n%saccept fd=%d, from %s:%d", getNowTime().data(), _fd, ip, ntohs(clientaddr.sin_port));
 #endif
                 set_fd_keepalive(_fd);
                 addfd(_fd,true);
@@ -155,7 +156,7 @@ void shar_network::run()
                 workPool->add_to_queue(fd);
                 epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
             }else if(events[index].events & (EPOLLIN | EPOLLRDHUP)){
-                printf("\nclose fd.");
+                printf("\n%sclose fd.", getNowTime().data());
             }
         }
     }

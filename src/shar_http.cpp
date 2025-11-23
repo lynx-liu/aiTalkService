@@ -1,4 +1,5 @@
 #include "shar_http.h"
+#include "debug.h"
 #include <sstream>
 
 sharHttpSer::sharHttpSer(const CONFIG ServerConfig)
@@ -49,7 +50,7 @@ size_t sharHttpSer::HeaderWriterFunc(void* contents, size_t size, size_t nmemb, 
             headerValue.erase(0, headerValue.find_first_not_of(" \t\r\n"));
             headerValue.erase(headerValue.find_last_not_of(" \t\r\n") + 1);
 
-            //printf("\nHeader: %s: %s", headerName.c_str(), headerValue.c_str());
+            //printf("\n%sHeader: %s: %s", getNowTime().data(), headerName.c_str(), headerValue.c_str());
 
             if (headerName == "ad_hear_record_id") {
                 responseHeader->ad_hear_record_id = headerValue;
@@ -58,7 +59,7 @@ size_t sharHttpSer::HeaderWriterFunc(void* contents, size_t size, size_t nmemb, 
             }
         }/* else {
             // 不是 key:value 结构 (状态行等)
-            printf("\nHeader: %s", headerLine.c_str());
+            printf("\n%sHeader: %s", getNowTime().data(), headerLine.c_str());
         }*/
     }
     return totalSize;
@@ -68,7 +69,7 @@ bool sharHttpSer::getTalkingInfo(std::string device, std::string& ID, int& type)
 {
     char postData[128] = {'\0'};
     sprintf(postData, "{\"deviceCode\":\"%s\"}", device.data());
-    printf("\ndeviceCode : %s", postData);
+    printf("\n%sdeviceCode : %s", getNowTime().data(), postData);
     readBuffer.clear();
  
     ID.clear();
@@ -93,9 +94,9 @@ bool sharHttpSer::getTalkingInfo(std::string device, std::string& ID, int& type)
         CURLcode res = curl_easy_perform(curl);
         // 检查错误
         if (res != CURLE_OK) {
-            printf("\ncurl_easy_perform() failed: %s", curl_easy_strerror(res));
+            printf("\n%scurl_easy_perform() failed: %s", getNowTime().data(), curl_easy_strerror(res));
         } else {
-            printf("\nResponse: %s", readBuffer.data());
+            printf("\n%sResponse: %s", getNowTime().data(), readBuffer.data());
             getGoupId(ID, type);
         }
         // 清理CURL列表
@@ -148,11 +149,11 @@ bool sharHttpSer::updateTalkingState(std::string device, int state)
         CURLcode res = curl_easy_perform(curl);
 		if (res != CURLE_OK)
 		{
-			printf("\ncurl_easy_perform() failed: %s", curl_easy_strerror(res));
+			printf("\n%scurl_easy_perform() failed: %s", getNowTime().data(), curl_easy_strerror(res));
 		}
 		else
 		{
-			printf("\nstrResponse is: %s", strResponse.data());
+			printf("\n%sstrResponse is: %s", getNowTime().data(), strResponse.data());
             result = getResult(strResponse);
 		}
 
@@ -185,11 +186,11 @@ bool sharHttpSer::updateVoiceState(std::string id, std::string status, int playi
         CURLcode res = curl_easy_perform(curl);
 		if (res != CURLE_OK)
 		{
-			printf("\ncurl_easy_perform() failed: %s", curl_easy_strerror(res));
+			printf("\n%scurl_easy_perform() failed: %s", getNowTime().data(), curl_easy_strerror(res));
 		}
 		else
 		{
-			printf("\nstrResponse is: %s", strResponse.data());
+			printf("\n%sstrResponse is: %s", getNowTime().data(), strResponse.data());
             result = getResult(strResponse);
 		}
 
