@@ -393,10 +393,6 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
             }).detach();
         }
     }
-    
-    if(currentSIM != groupInfo.mainSIM || groupID.empty()){
-        return false;
-    }
 
     pAudioDenoiser->denoiseBuffer((short*)ucOutBuff, shortPcmSize);
     //printf("\n%smainSIM:%s, SIM: %s, size: %d", getNowTime().data(), groupInfo.mainSIM.c_str(), currentSIM.c_str(), simMap.size());
@@ -416,6 +412,10 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
                 httpplayback(audioInfo, ucOutBuff, shortPcmSize);
             }
             continue;
+        }
+
+        if(currentSIM != groupInfo.mainSIM){
+            continue;//不是主讲人，不发送对讲数据
         }
 
         if(tiny_ws::get_client_fd(sim) > 0) {//主讲人不向已打开ws的用户发送对讲数据
