@@ -26,7 +26,7 @@ CRTPServerEngine::~CRTPServerEngine()
 	}
 
 	if(!m_BCDSIMStr.empty()){
-		printf("\n%sremoved device SIM: %s", getNowTime().data(), m_BCDSIMStr.c_str());
+		printf("\n%sremoved device SIM: %s\n", getNowTime().data(), m_BCDSIMStr.c_str());
 		del_audio_type_info(m_BCDSIMStr);
 		m_BCDSIMStr.clear();
 	}
