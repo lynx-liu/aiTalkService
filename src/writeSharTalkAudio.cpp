@@ -261,6 +261,18 @@ bool SharTalkAudio::wsplayback(audioType& audioInfo, const uint8_t* pcm, int sho
         push_to_device(buf, frameShortPcmSize, audioInfo);
         alter_map(audioInfo);
     }
+
+    //处理剩余不足一帧的数据
+    if (!wsRecvPcm.empty()) {
+        size_t remainingSize = wsRecvPcm.size();
+        memcpy(buf, wsRecvPcm.data(), remainingSize);
+        memset(buf + remainingSize, 0, PCM_FRAME_SIZE - remainingSize); // 补零
+
+        push_to_device(buf, frameShortPcmSize, audioInfo);
+        alter_map(audioInfo);
+
+        wsRecvPcm.clear();
+    }
     return true;
 }
 
