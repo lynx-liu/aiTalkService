@@ -315,10 +315,13 @@ void handle_client(int cli_fd) {
                     printf("\n%snew ws, SIM: %s", getNowTime().data(), sim.c_str());
                 }
             }
-            if(cb) cb(type); // 释放锁后再调用回调函数
 
-            uint8_t response[] = "success";
-            send_frame(cli_fd, BIN, response, sizeof(response)-1);
+            if(cb) {
+                cb(type); // 释放锁后再调用回调函数
+
+                uint8_t response[] = "success";//已注册回调表示设备已连接，应答ws表示成功
+                send_frame(cli_fd, BIN, response, sizeof(response)-1);
+            }
         }
     }
     close(cli_fd);
