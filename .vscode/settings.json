@@ -68,6 +68,7 @@
         "bit": "cpp",
         "queue": "cpp",
         "csignal": "cpp",
-        "regex": "cpp"
+        "regex": "cpp",
+        "shared_mutex": "cpp"
     }
 }
