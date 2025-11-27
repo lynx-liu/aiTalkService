@@ -397,12 +397,12 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
     pAudioDenoiser->denoiseBuffer((short*)ucOutBuff, shortPcmSize);
     //printf("\n%smainSIM:%s, SIM: %s, size: %d", getNowTime().data(), groupInfo.mainSIM.c_str(), currentSIM.c_str(), simMap.size());
     
+    std::lock_guard<std::mutex> lock(pcm_mutex);//确保webSocketFd和type线程同步更新，保护simMap遍历时不被修改，以及wsRecvPcm和httpRecvPcm数据一致性
     for (auto& simPair : simMap) {
         const std::string& sim = simPair.first;
         audioType& audioInfo = simPair.second;
 
         if (sim == currentSIM) {
-            std::lock_guard<std::mutex> lock(pcm_mutex);
             printf(" %d", type);
             if(webSocketFd>0) {//ws连上了，可能是多变量对讲，也可能是平台对讲
                 wsplayback(audioInfo, ucOutBuff, shortPcmSize);
