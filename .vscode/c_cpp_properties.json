@@ -1,28 +1,23 @@
 {
     "configurations": [
         {
-            "name": "Win32",
+            "name": "Linux-GCC",
+            "compilerPath": "/usr/bin/g++",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-x64",
             "includePath": [
-                "${workspaceFolder}/**"
+                "${workspaceFolder}/**",
+                "/usr/include",
+                "/usr/include/c++/9",
+                "/usr/include/x86_64-linux-gnu/c++/9",
+                "/usr/include/c++/9/backward"
             ],
             "defines": [
                 "_DEBUG",
                 "UNICODE",
                 "_UNICODE"
-            ],
-            "intelliSenseMode": "msvc-x64"
-        },
-        {
-            "name": "kingson",
-            "includePath": [
-                "${workspaceFolder}/**"
-            ],
-            "defines": [
-                "_DEBUG",
-                "UNICODE",
-                "_UNICODE"
-            ],
-            "intelliSenseMode": "msvc-x64"
+            ]
         }
     ],
     "version": 4
