@@ -292,7 +292,7 @@ void handle_client(int cli_fd) {
                 if (it != client_map.end()) {
                     it->second.type = type;
 
-                    if(it->second.fd<=0) {// 已预注册的回调，更新 fd
+                    if(it->second.fd<0) {// 已预注册的回调，更新 fd
                         it->second.fd = cli_fd;
                         printf("\n%supdate ws, SIM: %s", getNowTime().data(), sim.c_str());
                     } else {
@@ -321,6 +321,11 @@ void handle_client(int cli_fd) {
 
                 uint8_t response[] = "success";//已注册回调表示设备已连接，应答ws表示成功
                 send_frame(cli_fd, BIN, response, sizeof(response)-1);
+            } else {
+                if(type==0) {// 平台对讲不等设备的TCP连接，直接返回成功
+                    uint8_t response[] = "success";
+                    send_frame(cli_fd, BIN, response, sizeof(response)-1);
+                }
             }
         }
     }
