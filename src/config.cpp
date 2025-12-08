@@ -49,8 +49,8 @@ int get_config(CONFIG* cfg)
 		if(!load) {
 			strncpy(s_config.httpserver, "https://wechat.che-mi.net", sizeof(s_config.httpserver));
 			strncpy(s_config.aiserver, "https://wechat.che-mi.net", sizeof(s_config.aiserver));
-			s_config.audioport = 9191;
-			s_config.wsport = 9000;
+			s_config.audioport = 8861;
+			s_config.wsport = 9201;
 		}
 
 		printf("%shttpserver: %s\n", getNowTime().data(), s_config.httpserver);
