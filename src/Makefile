@@ -17,11 +17,11 @@ talkShar : $(OBJS)
 
 # .cpp 文件编译规则
 %.o : %.cpp
-	@g++ -g -std=c++17 -c $< -o $@
+	@g++ -g -std=c++11 -c $< -o $@
 
 # .cc 文件编译规则
 %.o : %.cc
-	@g++ -g -std=c++17 -c $< -o $@
+	@g++ -g -std=c++11 -c $< -o $@
 
 # .c 文件编译规则
 %.o : %.c
