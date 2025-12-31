@@ -193,7 +193,10 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 			}
 		} else {
 			if(DataType == DATA_TYPE_AUDIO) {
-				_sharTalkstrue->write_shar_device(data.get(), header.WdBodyLen);
+				if(!_sharTalkstrue->write_shar_device(data.get(), header.WdBodyLen)) {
+					printf("\n%sFailed to write audio data to device", getNowTime().data());
+					break;
+				}
 			}
 		}
 	}
