@@ -507,6 +507,8 @@ int SharTalkAudio::audio_decoder(uint8_t *data, uint16_t size)
         return g711a_decode((short*)ucOutBuff, data, size);
     }else if(audio_type == LOAD_TYPE_ADPCM){ 
         return ADPCM_decode(data, size);
+    }else{
+        printf("\n%saudio_type error: %d", getNowTime().data(), audio_type);
     }
     return 0;
 }
