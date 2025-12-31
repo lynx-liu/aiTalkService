@@ -348,7 +348,6 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
 
     int64_t currentTime = get_timestamp();
     if(isSpeechPresent((short*)ucOutBuff, shortPcmSize)) {//司机在讲话
-        printf("\n%sisSpeechPresent: sim: %s, mainSIM: %s", getNowTime().data(), currentSIM.c_str(), groupInfo.mainSIM.c_str());
         if(!isSpeaking) {
             isSpeaking = true;
             printf("\n%s%s isSpeaking = true", getNowTime().data(), currentSIM.c_str());
