@@ -337,11 +337,13 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
         printf("\n%saudio_decoder fail!", getNowTime().data());
         return false;
     }
-
+    
     auto groupIt = sharObjInfoMap.find(groupID);
     if (groupIt == sharObjInfoMap.end()) {
         return false;
     }
+
+    pAudioDenoiser->denoiseBuffer((short*)ucOutBuff, shortPcmSize);
 
     GroupAudioInfo& groupInfo = groupIt->second;
     auto& simMap = groupInfo.simMap;
@@ -393,9 +395,6 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
         }
     }
 
-    pAudioDenoiser->denoiseBuffer((short*)ucOutBuff, shortPcmSize);
-    //printf("\n%smainSIM:%s, SIM: %s, size: %d", getNowTime().data(), groupInfo.mainSIM.c_str(), currentSIM.c_str(), simMap.size());
-    
     std::lock_guard<std::mutex> lock(pcm_mutex);//确保webSocketFd和type线程同步更新，保护simMap遍历时不被修改，以及wsRecvPcm和httpRecvPcm数据一致性
     for (auto& simPair : simMap) {
         const std::string& sim = simPair.first;
