@@ -276,10 +276,16 @@ void handle_client(int cli_fd) {
             printf("*");
             if (!sim.empty()) {
                 //printf("\n%sReceived binary frame of size %zu", getNowTime().data(), frame.payload.size());
-                std::lock_guard<std::mutex> lock(client_map_mutex);
-                auto it = client_map.find(sim);
-                if (it != client_map.end() && it->second.on_message) {
-                    it->second.on_message(frame.payload);
+                std::function<void(const std::vector<uint8_t>&)> cb;
+                {
+                    std::lock_guard<std::mutex> lock(client_map_mutex);
+                    auto it = client_map.find(sim);
+                    if (it != client_map.end()) {
+                        cb = it->second.on_message;
+                    }
+                }
+                if (cb) {
+                    cb(frame.payload);
                 }
             }
         } else {
