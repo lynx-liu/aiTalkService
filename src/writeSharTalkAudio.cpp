@@ -1,6 +1,10 @@
 #include <unistd.h>
 #include <cstddef>
 #include <cstring>
+#include <map>
+#include <memory>
+#include <string>
+#include <mutex>
 #include <thread>
 #include "debug.h"
 #include "tiny_ws.h"
@@ -15,12 +19,14 @@
 #define TYPE_WS_VAR_TALK    0x04 //多变量通知触发的对讲
 
 struct GroupAudioInfo {
+    std::mutex mtx;
     std::string mainSIM;
     uint64_t timestamp;
     std::map<std::string, audioType> simMap;
 };
 
-static std::map<std::string, GroupAudioInfo> sharObjInfoMap;
+static std::map<std::string, std::shared_ptr<GroupAudioInfo>> sharObjInfoMap;
+static std::mutex g_group_map_mutex;
 
 SharTalkAudio::SharTalkAudio(const CONFIG ServerConfig)
 {
@@ -84,26 +90,32 @@ void SharTalkAudio::reint()
 
     if (!currentSIM.empty()) {
         tiny_ws::remove_callback(currentSIM);
-        
-        auto groupIt = sharObjInfoMap.find(groupID);
-        if (groupIt != sharObjInfoMap.end()) {
-            GroupAudioInfo& groupInfo = groupIt->second;
-            auto& simMap = groupInfo.simMap;
 
-            simMap.erase(currentSIM);
+        {
+            std::lock_guard<std::mutex> mapLock(g_group_map_mutex);
+            auto groupIt = sharObjInfoMap.find(groupID);
+            if (groupIt != sharObjInfoMap.end() && groupIt->second) {
+                auto groupInfo = groupIt->second;
+                std::lock_guard<std::mutex> groupLock(groupInfo->mtx);
+                auto& simMap = groupInfo->simMap;
 
-            if (groupInfo.mainSIM == currentSIM) {
-                if (!simMap.empty()) {
-                    groupInfo.mainSIM = simMap.begin()->first;
-                    groupInfo.timestamp = get_timestamp();
-                    sharHttSer->updateTalkingState(groupInfo.mainSIM, 5);  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
-                } else {
-                    groupInfo.mainSIM.clear();  // 当前组为空了
+                simMap.erase(currentSIM);
+                printf("\n%sremove SIM: %s from groupID: %s (reint), currentGroup size: %zu", getNowTime().data(), currentSIM.data(), groupID.data(), simMap.size());
+
+                if (groupInfo->mainSIM == currentSIM) {
+                    if (!simMap.empty()) {
+                        groupInfo->mainSIM = simMap.begin()->first;
+                        groupInfo->timestamp = get_timestamp();
+                        sharHttSer->updateTalkingState(groupInfo->mainSIM, 5);  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
+                    } else {
+                        groupInfo->mainSIM.clear();  // 当前组为空了
+                    }
                 }
-            }
-            
-            if (simMap.empty()) {
-                sharObjInfoMap.erase(groupIt);
+
+                if (simMap.empty()) {
+                    sharObjInfoMap.erase(groupIt);
+                    printf("\n%sremove groupID: %s (reint), group size: %zu", getNowTime().data(), groupID.data(), sharObjInfoMap.size());
+                }
             }
         }
     
@@ -172,40 +184,51 @@ bool SharTalkAudio::sharInit(std::string sim, uint8_t loadType)
                 }
             }, [weak_this](int type) {
                 if (auto self = weak_this.lock()) {
-                    std::lock_guard<std::mutex> lock(self->pcm_mutex);
-                    self->webSocketFd = -1;
-                    if(type>0) {// 清除对应的type标志
-                        self->type &= ~type;
+                    // 先更新本对象的状态（避免与 write_shar_device 里对 type/webSocketFd 的读取产生竞态）
+                    {
+                        std::lock_guard<std::mutex> lock(self->pcm_mutex);
+                        self->webSocketFd = -1;
+                        if(type>0) {// 清除对应的type标志
+                            self->type &= ~type;
+                        }
+                        printf("\n%sws disconnected, type: %d --> %d", getNowTime().data(), type, self->type);
+
+                        memset(self->deState, 0, sizeof(adpcm_state));
+                        memset(self->enState, 0, sizeof(adpcm_state));
                     }
-                    printf("\n%sws disconnected, type: %d --> %d", getNowTime().data(), type, self->type);
 
-                    // 从sharObjInfoMap中移除currentSIM
-                    auto groupIt = sharObjInfoMap.find(self->groupID);
-                    if (groupIt != sharObjInfoMap.end()) {
-                        GroupAudioInfo& groupInfo = groupIt->second;
-                        auto& simMap = groupInfo.simMap;
+                    // 再操作全局 sharObjInfoMap（不与 pcm_mutex 交叉持锁，避免锁顺序反转导致死锁）
+                    {
+                        std::lock_guard<std::mutex> mapLock(g_group_map_mutex);
+                        auto groupIt = sharObjInfoMap.find(self->groupID);
+                        if (groupIt != sharObjInfoMap.end() && groupIt->second) {
+                            auto groupInfo = groupIt->second;
+                            std::lock_guard<std::mutex> groupLock(groupInfo->mtx);
+                            auto& simMap = groupInfo->simMap;
 
-                        simMap.erase(self->currentSIM);
-                        printf("\n%sremove SIM: %s from groupID: %s", getNowTime().data(), self->currentSIM.data(), self->groupID.data());
-                        
-                        if (simMap.empty()) {
-                            groupInfo.mainSIM.clear();  // 当前组为空了
-                            sharObjInfoMap.erase(groupIt);
-                            printf("\n%sremove groupID: %s", getNowTime().data(), self->groupID.data());
+                            simMap.erase(self->currentSIM);
+                            printf("\n%sremove SIM: %s from groupID: %s (ws disconnected), currentGroup size: %zu", getNowTime().data(), self->currentSIM.data(), self->groupID.data(), simMap.size());
+
+                            if (simMap.empty()) {
+                                groupInfo->mainSIM.clear();  // 当前组为空了
+                                sharObjInfoMap.erase(groupIt);
+                                printf("\n%sremove groupID: %s (ws disconnected), group size: %zu", getNowTime().data(), self->groupID.data(), sharObjInfoMap.size());
+                            }
                         }
                     }
 
-                    if(self->sharHttSer->getTalkingInfo(self->currentSIM, self->groupID, type)) { //重新获取对讲信息
-                        self->type |= type;
-                        
+                    int newType = 0;
+                    if(self->sharHttSer->getTalkingInfo(self->currentSIM, self->groupID, newType)) { //重新获取对讲信息
+                        {
+                            std::lock_guard<std::mutex> lock(self->pcm_mutex);
+                            self->type |= newType;
+                            printf("\n%sgroupID: %s, type: %d --> %d", getNowTime().data(), self->groupID.data(), newType, self->type);
+                        }
+
                         if(!self->groupID.empty()){
-                            printf("\n%sgroupID: %s, type: %d --> %d", getNowTime().data(), self->groupID.data(), type, self->type);
                             self->add_map(self->currentSIM, self->groupID);
                         }
                     }
-
-                    memset(self->deState, 0, sizeof(adpcm_state));
-                    memset(self->enState, 0, sizeof(adpcm_state));
                 }
             });
             return true;
@@ -218,8 +241,22 @@ bool SharTalkAudio::sharInit(std::string sim, uint8_t loadType)
 
 void SharTalkAudio::add_map(const std::string& sim, const std::string& groupId)
 {
-    GroupAudioInfo& groupInfo = sharObjInfoMap[groupId];
-    auto& simMap = groupInfo.simMap;
+    std::shared_ptr<GroupAudioInfo> groupInfo;
+    size_t groupCount = 0;
+    {
+        // add_map 低频：允许持有全局锁时间稍长，保证不会与删除竞争导致“加到已被erase的组对象”
+        std::lock_guard<std::mutex> mapLock(g_group_map_mutex);
+        auto& groupPtr = sharObjInfoMap[groupId];
+        if (!groupPtr) {
+            groupPtr = std::make_shared<GroupAudioInfo>();
+            groupPtr->timestamp = 0;
+        }
+        groupInfo = groupPtr;
+        groupCount = sharObjInfoMap.size();
+    }
+
+    std::lock_guard<std::mutex> groupLock(groupInfo->mtx);
+    auto& simMap = groupInfo->simMap;
 
     if (simMap.find(sim) != simMap.end())
         return;
@@ -230,15 +267,15 @@ void SharTalkAudio::add_map(const std::string& sim, const std::string& groupId)
     audioInfo.Bt8timeStamp = get_timestamp();
     simMap[sim] = audioInfo;
 
-    if (groupInfo.mainSIM.empty()) {
-        groupInfo.mainSIM = sim;
-        groupInfo.timestamp = get_timestamp();
+    if (groupInfo->mainSIM.empty()) {
+        groupInfo->mainSIM = sim;
+        groupInfo->timestamp = get_timestamp();
         if(type&TYPE_GROUP_TALK) {
-            sharHttSer->updateTalkingState(groupInfo.mainSIM, 5);  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
+            sharHttSer->updateTalkingState(groupInfo->mainSIM, 5);  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
         }
     }
 
-    printf("\n%sgroup size: %zu, currentGroup size: %zu", getNowTime().data(), sharObjInfoMap.size(), simMap.size());
+    printf("\n%sgroupID: %s add SIM: %s | group size: %zu, currentGroup size: %zu", getNowTime().data(), groupId.c_str(), sim.c_str(), groupCount, simMap.size());
 }
 
 void SharTalkAudio::alter_map(audioType& audioInfo)
@@ -337,16 +374,23 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
         printf("\n%saudio_decoder fail!", getNowTime().data());
         return false;
     }
-    
-    auto groupIt = sharObjInfoMap.find(groupID);
-    if (groupIt == sharObjInfoMap.end()) {
-        return false;
+
+    // 只在查找 group 时持有全局锁：不同 group 可以并发执行
+    std::shared_ptr<GroupAudioInfo> groupInfo;
+    {
+        std::lock_guard<std::mutex> mapLock(g_group_map_mutex);
+        auto groupIt = sharObjInfoMap.find(groupID);
+        if (groupIt == sharObjInfoMap.end() || !groupIt->second) {
+            return false;
+        }
+        groupInfo = groupIt->second;
     }
 
     pAudioDenoiser->denoiseBuffer((short*)ucOutBuff, shortPcmSize);
 
-    GroupAudioInfo& groupInfo = groupIt->second;
-    auto& simMap = groupInfo.simMap;
+    // 组内锁：保护 mainSIM/timestamp/simMap 以及 simMap 遍历/修改
+    std::lock_guard<std::mutex> groupLock(groupInfo->mtx);
+    auto& simMap = groupInfo->simMap;
 
     int64_t currentTime = get_timestamp();
     if(isSpeechPresent((short*)ucOutBuff, shortPcmSize)) {//司机在讲话
@@ -359,21 +403,22 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
             }
         }
 
-        if(currentSIM != groupInfo.mainSIM) {
-            if(currentTime-groupInfo.timestamp>WAIT_MAIN_SIM_TIME) {
-                groupInfo.mainSIM = currentSIM;
-                groupInfo.timestamp = currentTime;
-                std::thread([this, groupInfo](){
-                    sharHttSer->updateTalkingState(groupInfo.mainSIM, 5);  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
+        if(currentSIM != groupInfo->mainSIM) {
+            if(currentTime-groupInfo->timestamp>WAIT_MAIN_SIM_TIME) {
+                groupInfo->mainSIM = currentSIM;
+                groupInfo->timestamp = currentTime;
+                std::string sim = groupInfo->mainSIM;
+                std::thread([this, sim](){
+                    sharHttSer->updateTalkingState(sim, 5);  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
                 }).detach();
 
                 memset(deState, 0, sizeof(adpcm_state));
                 memset(enState, 0, sizeof(adpcm_state));
             }
         } else {
-            groupInfo.timestamp = currentTime;
+            groupInfo->timestamp = currentTime;
         }
-    } else if(isSpeaking && currentTime-groupInfo.timestamp>WAIT_MAIN_SIM_TIME){//司机停止讲话
+    } else if(isSpeaking && currentTime-groupInfo->timestamp>WAIT_MAIN_SIM_TIME){//司机停止讲话
         isSpeaking = false;
         printf("\n%s%s isSpeaking = false", getNowTime().data(), currentSIM.c_str());
 
@@ -412,7 +457,7 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
             continue;
         }
 
-        if(currentSIM != groupInfo.mainSIM){
+        if(currentSIM != groupInfo->mainSIM){
             continue;//不是主讲人，不发送对讲数据
         }
 
