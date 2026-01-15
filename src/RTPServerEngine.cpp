@@ -1,5 +1,7 @@
 #include <cstring>
 #include <unistd.h>
+#include <sys/time.h>
+#include <sys/socket.h>
 #include <memory>
 #include <sstream>
 #include <iomanip>
@@ -241,6 +243,17 @@ bool CRTPServerEngine::insert_talk_info(const uint8_t* data, RTP_PKG_HEADER &hea
 	audioInfo.ChannelNumber = header.Bt1LogicChannelNumber;
 	audioInfo.socketFd = sockFd;
 	audioInfo.type = header.type;
+
+	// Bound blocking send() on the device TCP connection.
+	// Prevents long stalls when the peer is slow/unresponsive.
+	{
+		struct timeval tv;
+		tv.tv_sec = 0;
+		tv.tv_usec = 500 * 1000;
+		if (setsockopt(sockFd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) != 0) {
+			perror("setsockopt SO_SNDTIMEO");
+		}
+	}
 
 	if(audioInfo.type&0x7F == LOAD_TYPE_ADPCM){
 		if (data[0] == 0x00 && data[1] == 0x01 && data[2] == (header.WdBodyLen - 4) / 2 && data[3] == 0x00){
