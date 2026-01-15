@@ -1,6 +1,19 @@
 #include "shar_http.h"
 #include "debug.h"
 #include <sstream>
+#include <mutex>
+
+namespace {
+
+std::once_flag g_curl_init_once;
+
+inline void ensure_curl_global_init() {
+    std::call_once(g_curl_init_once, []() {
+        curl_global_init(CURL_GLOBAL_DEFAULT);
+    });
+}
+
+} // namespace
 
 sharHttpSer::sharHttpSer(const CONFIG ServerConfig)
 {
@@ -67,13 +80,14 @@ size_t sharHttpSer::HeaderWriterFunc(void* contents, size_t size, size_t nmemb, 
 
 bool sharHttpSer::getTalkingInfo(std::string device, std::string& ID, int& type)
 {
+    ensure_curl_global_init();
+
     char postData[128] = {'\0'};
-    sprintf(postData, "{\"deviceCode\":\"%s\"}", device.data());
+    snprintf(postData, sizeof(postData), "{\"deviceCode\":\"%s\"}", device.c_str());
     printf("\n%sdeviceCode : %s", getNowTime().data(), postData);
     readBuffer.clear();
  
     ID.clear();
-    curl_global_init(CURL_GLOBAL_DEFAULT);
     CURL * curl = curl_easy_init();
     if (curl) {
         // 设置URL
@@ -104,7 +118,6 @@ bool sharHttpSer::getTalkingInfo(std::string device, std::string& ID, int& type)
         // 清理CURL对象
         curl_easy_cleanup(curl);
     }
-    curl_global_cleanup();
 
 #if DEBUG
     ID = "debug_test_group";
@@ -129,9 +142,10 @@ void sharHttpSer::getGoupId(std::string& ID, int& type)
 //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
 bool sharHttpSer::updateTalkingState(std::string device, int state)
 {
+    ensure_curl_global_init();
     bool result = false;
 	char postData[128] = {'\0'};
-	sprintf(postData, "{\"deviceCode\":\"%s\",\"state\":%d}", device.data(), state);
+    snprintf(postData, sizeof(postData), "{\"deviceCode\":\"%s\",\"state\":%d}", device.c_str(), state);
 
     CURL* curl = curl_easy_init();
 	if (curl)
@@ -166,9 +180,10 @@ bool sharHttpSer::updateTalkingState(std::string device, int state)
 // 更新广告播放状态, status:[02:完成，03:中断]
 bool sharHttpSer::updateVoiceState(std::string id, std::string status, int playingTime)
 {
+    ensure_curl_global_init();
     bool result = false;
 	char postData[128] = {'\0'};
-	sprintf(postData, "{\"id\":\"%s\",\"status\":%s,\"playingTime\":%d}", id.data(), status.data(), playingTime);
+    snprintf(postData, sizeof(postData), "{\"id\":\"%s\",\"status\":%s,\"playingTime\":%d}", id.c_str(), status.c_str(), playingTime);
 
     CURL* curl = curl_easy_init();
 	if (curl)
@@ -201,6 +216,7 @@ bool sharHttpSer::updateVoiceState(std::string id, std::string status, int playi
 }
 
 std::vector<uint8_t> sharHttpSer::POST_pcm(const std::string& device, const std::vector<uint8_t>& pcmData, ResponseHeader& responseHeader) {
+    ensure_curl_global_init();
     std::vector<uint8_t> responseData;
     CURL* curl = curl_easy_init();
     if (!curl) return responseData;
