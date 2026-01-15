@@ -1,4 +1,6 @@
 #include <thread>
+#include <sys/time.h>
+#include <sys/uio.h>
 #include "../json/json.h"
 #include "debug.h"
 #include "tiny_ws.h"
@@ -7,6 +9,16 @@ namespace tiny_ws {
 
 std::unordered_map<std::string, ClientInfo> client_map;
 std::mutex client_map_mutex;
+
+static void set_socket_send_timeout_ms(int fd, int timeout_ms) {
+    if (timeout_ms <= 0) return;
+    struct timeval tv;
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
+    if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) != 0) {
+        perror("setsockopt SO_SNDTIMEO");
+    }
+}
 
 inline std::string getShortSIM(const std::string& sim)
 {
@@ -116,8 +128,13 @@ void send_frame(int fd, OpCode opcode, const void* data, size_t len) {
         *(uint64_t*)(header + 2) = htobe64(len);
         header_len += 8;
     }
-    write(fd, header, header_len);
-    write(fd, data, len);
+
+    struct iovec iov[2];
+    iov[0].iov_base = header;
+    iov[0].iov_len = header_len;
+    iov[1].iov_base = const_cast<void*>(data);
+    iov[1].iov_len = len;
+    (void)writev(fd, iov, 2);
 }
 
 void send_text(int fd, const std::string& msg) {
@@ -368,6 +385,10 @@ int start(uint16_t port) {
     while (true) {
         int cli = accept(srv, nullptr, nullptr);
         if (cli < 0) { perror("accept"); continue; }
+
+        // Bound blocking send() / write() on this websocket connection.
+        set_socket_send_timeout_ms(cli, 500);
+
         std::thread client_thread(handle_client, cli);
         client_thread.detach(); // 分离线程，使其在后台运行
     }
