@@ -91,6 +91,7 @@ void SharTalkAudio::reint()
     if (!currentSIM.empty()) {
         tiny_ws::remove_callback(currentSIM);
 
+        std::lock_guard<std::mutex> lock(pcm_mutex);
         {
             std::lock_guard<std::mutex> mapLock(g_group_map_mutex);
             auto groupIt = sharObjInfoMap.find(groupID);
@@ -117,12 +118,12 @@ void SharTalkAudio::reint()
                     printf("\n%sremove groupID: %s (reint), group size: %zu", getNowTime().data(), groupID.data(), sharObjInfoMap.size());
                 }
             }
+
+            if(type&TYPE_GROUP_TALK) {
+                sharHttSer->updateTalkingState(currentSIM, 4);
+            }
+            currentSIM.clear();
         }
-    
-        if(type&TYPE_GROUP_TALK) {
-            sharHttSer->updateTalkingState(currentSIM, 4);
-        }
-        currentSIM.clear();
     }
 }
 
@@ -184,20 +185,16 @@ bool SharTalkAudio::sharInit(std::string sim, uint8_t loadType)
                 }
             }, [weak_this](int type) {
                 if (auto self = weak_this.lock()) {
-                    // 先更新本对象的状态（避免与 write_shar_device 里对 type/webSocketFd 的读取产生竞态）
-                    {
-                        std::lock_guard<std::mutex> lock(self->pcm_mutex);
-                        self->webSocketFd = -1;
-                        if(type>0) {// 清除对应的type标志
-                            self->type &= ~type;
-                        }
-                        printf("\n%sws disconnected, type: %d --> %d", getNowTime().data(), type, self->type);
-
-                        memset(self->deState, 0, sizeof(adpcm_state));
-                        memset(self->enState, 0, sizeof(adpcm_state));
+                    std::lock_guard<std::mutex> lock(self->pcm_mutex);
+                    self->webSocketFd = -1;
+                    if(type>0) {// 清除对应的type标志
+                        self->type &= ~type;
                     }
+                    printf("\n%sws disconnected, type: %d --> %d", getNowTime().data(), type, self->type);
 
-                    // 再操作全局 sharObjInfoMap（不与 pcm_mutex 交叉持锁，避免锁顺序反转导致死锁）
+                    memset(self->deState, 0, sizeof(adpcm_state));
+                    memset(self->enState, 0, sizeof(adpcm_state));
+
                     {
                         std::lock_guard<std::mutex> mapLock(g_group_map_mutex);
                         auto groupIt = sharObjInfoMap.find(self->groupID);
@@ -217,16 +214,15 @@ bool SharTalkAudio::sharInit(std::string sim, uint8_t loadType)
                         }
                     }
 
-                    int newType = 0;
-                    if(self->sharHttSer->getTalkingInfo(self->currentSIM, self->groupID, newType)) { //重新获取对讲信息
-                        {
-                            std::lock_guard<std::mutex> lock(self->pcm_mutex);
+                    if(!self->currentSIM.empty()) {
+                        int newType = 0;
+                        if(self->sharHttSer->getTalkingInfo(self->currentSIM, self->groupID, newType)) { //重新获取对讲信息
                             self->type |= newType;
                             printf("\n%sgroupID: %s, type: %d --> %d", getNowTime().data(), self->groupID.data(), newType, self->type);
-                        }
 
-                        if(!self->groupID.empty()){
-                            self->add_map(self->currentSIM, self->groupID);
+                            if(!self->groupID.empty()){
+                                self->add_map(self->currentSIM, self->groupID);
+                            }
                         }
                     }
                 }
@@ -388,6 +384,9 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
 
     pAudioDenoiser->denoiseBuffer((short*)ucOutBuff, shortPcmSize);
 
+    // 注意锁顺序：先 pcm_mutex 再 groupInfo->mtx，避免与 reint/on_disconnect 形成死锁环
+    std::lock_guard<std::mutex> lock(pcm_mutex);//确保webSocketFd和type线程同步更新，保护simMap遍历时不被修改，以及wsRecvPcm和httpRecvPcm数据一致性
+
     // 组内锁：保护 mainSIM/timestamp/simMap 以及 simMap 遍历/修改
     std::lock_guard<std::mutex> groupLock(groupInfo->mtx);
     auto& simMap = groupInfo->simMap;
@@ -440,7 +439,6 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
         }
     }
 
-    std::lock_guard<std::mutex> lock(pcm_mutex);//确保webSocketFd和type线程同步更新，保护simMap遍历时不被修改，以及wsRecvPcm和httpRecvPcm数据一致性
     for (auto& simPair : simMap) {
         const std::string& sim = simPair.first;
         audioType& audioInfo = simPair.second;
