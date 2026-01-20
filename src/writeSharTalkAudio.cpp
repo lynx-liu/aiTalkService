@@ -1,6 +1,7 @@
 #include <unistd.h>
 #include <cstddef>
 #include <cstring>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
@@ -9,6 +10,16 @@
 #include "debug.h"
 #include "tiny_ws.h"
 #include "writeSharTalkAudio.h"
+
+// declare libfvad C API we'll use (libfvad lives in ../libfvad)
+extern "C" {
+    struct Fvad;
+    Fvad *fvad_new(void);
+    void fvad_free(Fvad *inst);
+    int fvad_set_mode(Fvad* inst, int mode);
+    int fvad_set_sample_rate(Fvad* inst, int sample_rate);
+    int fvad_process(Fvad* inst, const int16_t* frame, size_t length);
+}
 
 #define WAIT_MAIN_SIM_TIME  2000 //ms
 #define PCM_FRAME_SIZE      640
@@ -40,6 +51,13 @@ SharTalkAudio::SharTalkAudio(const CONFIG ServerConfig)
 
     sharHttSer= new sharHttpSer(ServerConfig);
     currentSIM.clear();
+
+    // create and configure libfvad instance (aggressive mode to avoid false positives)
+    vad = fvad_new();
+    if (vad) {
+        fvad_set_sample_rate(vad, 8000);
+        fvad_set_mode(vad, 3);
+    }
 }
 
 SharTalkAudio::~SharTalkAudio()
@@ -67,6 +85,10 @@ SharTalkAudio::~SharTalkAudio()
     if(pAudioDenoiser){
         delete pAudioDenoiser;
         pAudioDenoiser = nullptr;
+    }
+    if (vad) {
+        fvad_free(vad);
+        vad = nullptr;
     }
 }
 
@@ -569,17 +591,18 @@ int SharTalkAudio::ADPCM_decode(uint8_t *data, uint16_t size)
     return (size - 4) * 4;
 }
 
-bool SharTalkAudio::isSpeechPresent(const short* pcm, int sampleCount, int threshold)
+bool SharTalkAudio::isSpeechPresent(const short* pcm, int sampleCount)
 {
-    if (!pcm || sampleCount <= 0) return false;
+    int idx = 0;
+    int total_frames = 0;
+    int voiced_frames = 0;
+    int FRAME_SIZE = 160; // 20ms at 8kHz
 
-    long long sumAbs = 0;
-    for (int i = 0; i < sampleCount; i++) {
-        short power = std::abs(pcm[i]);
-        sumAbs += power;
+    while (sampleCount - idx >= FRAME_SIZE) {
+        if (fvad_process(vad, pcm + idx, FRAME_SIZE) > 0)
+            voiced_frames++;
+        total_frames++;
+        idx += FRAME_SIZE;
     }
-
-    int avgAmplitude = sumAbs / sampleCount;
-    //printf("\nsim: %s, avg: %d, count: %d sum:%lld", currentSIM.c_str(), avgAmplitude, sampleCount, sumAbs);
-    return avgAmplitude > threshold;
+    return total_frames>1 && voiced_frames==total_frames;
 }

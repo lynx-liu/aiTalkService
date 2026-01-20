@@ -7,6 +7,9 @@
 #include <algorithm> // 包含 std::find
 #include <mutex>
 
+// forward declare libfvad context
+struct Fvad;
+
 #define BUFF_SIZE 1024
 
 class SharTalkAudio : public std::enable_shared_from_this<SharTalkAudio>
@@ -26,7 +29,7 @@ private:
     void add_map(const std::string& sim, const std::string& groupId);
     void alter_map(audioType& audioInfo);
     uint64_t get_timestamp();
-    bool isSpeechPresent(const short* pcm, int sampleCount, int threshold = 500);
+    bool isSpeechPresent(const short* pcm, int sampleCount);
 
     void appendPCMData(const uint8_t* pcm, size_t size);
     bool wsplayback(audioType& audioInfo, const uint8_t* pcm, int shortPcmSize);
@@ -59,6 +62,7 @@ private:
     std::vector<uint8_t> pcmBuf;
 
     AudioDenoiser *pAudioDenoiser;
+    Fvad* vad;
 
     ResponseHeader responseHeader;
     int64_t playingStartTime;//广告播放开始时间,用于统计广告播放时长
