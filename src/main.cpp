@@ -16,7 +16,7 @@ int main(int argc, char* argv[])
 
     std::thread([=](){tiny_ws::start(ServerConfig.wsport);}).detach();
 
-    shared_ptr<shar_network>  sharNetwork = make_shared<shar_network>(ServerConfig, 20);
+    shared_ptr<shar_network>  sharNetwork = make_shared<shar_network>(ServerConfig);
     sharNetwork->start_sharNetwork();
 
     return 0;

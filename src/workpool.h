@@ -7,7 +7,7 @@
 class Workpool
 {
 public:
-    Workpool(CONFIG config_, int threNum);
+    Workpool(CONFIG config_);
     ~Workpool();
     void add_to_queue(int fd);
 
@@ -20,7 +20,9 @@ private:
     CONFIG          _config;
     queue<CRTPServerEngine*>    event_queue;
     Mutex           event_mutex;
-    Cond            cond;
+    Sem             sem;
+    Mutex           state_mutex;
+    int             idle_thread_count;
 };
 
 #endif

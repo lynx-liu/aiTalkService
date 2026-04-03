@@ -6,10 +6,10 @@
 #include "debug.h"
 #include "shar_network.h"
 
-shar_network::shar_network(CONFIG config_, int threadNum):
+shar_network::shar_network(CONFIG config_):
 port(config_.audioport)
 {
-    workPool = new Workpool(config_, threadNum);
+    workPool = new Workpool(config_);
     wsockFd = 0;
     epollfd = 0;
 }

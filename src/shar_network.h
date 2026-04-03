@@ -10,7 +10,7 @@
 class shar_network
 {
 public:
-    shar_network(CONFIG config_, int threadNum);
+    shar_network(CONFIG config_);
     ~shar_network();
     bool start_sharNetwork();
 

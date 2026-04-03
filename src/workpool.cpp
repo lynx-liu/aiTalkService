@@ -2,12 +2,11 @@
 #include "debug.h"
 #include "workpool.h"
 
-Workpool::Workpool(CONFIG config_, int threNum):
-_config(config_)
+Workpool::Workpool(CONFIG config_):
+_config(config_),
+idle_thread_count(0)
 {
-    for(int i = 0; i< threNum; i++){
-        create_task();
-    }
+    create_task();
 }
 
 Workpool::~Workpool()
@@ -24,13 +23,28 @@ Workpool::~Workpool()
 
 void Workpool::add_to_queue(int fd)
 {
+    int queue_size = 0;
     event_mutex.mutex_lock();
     CRTPServerEngine* engine = new CRTPServerEngine{fd, _config};
     if(engine) {
         event_queue.push(engine);
-        cond.signal();
+        queue_size = event_queue.size();
     }
     event_mutex.mutex_unlock();
+
+    if(engine) {
+        sem.post(); // 信号量：即使所有线程都忙，post 也不会丢失
+
+        int idle_threads = 0;
+        state_mutex.mutex_lock();
+        idle_threads = idle_thread_count;
+        state_mutex.mutex_unlock();
+
+        // 自动扩容：当待处理任务多于空闲线程时，创建新线程
+        if(queue_size > idle_threads) {
+            create_task();
+        }
+    }
 }
 
 bool Workpool::create_task()
@@ -54,7 +68,24 @@ void* Workpool::_task_thread(void* This)
 void Workpool::task_run()
 {
     for(;;){
-        cond.wait();
+        state_mutex.mutex_lock();
+        ++idle_thread_count;
+
+        // 空闲线程超过1时，主动释放当前线程，保持最多1个空闲线程
+        if(idle_thread_count > 1){
+            --idle_thread_count;
+            state_mutex.mutex_unlock();
+            break;
+        }
+        state_mutex.mutex_unlock();
+
+        sem.wait(); // 信号量：每次 post 对应一次 wait，不会丢失
+
+        state_mutex.mutex_lock();
+        if(idle_thread_count > 0){
+            --idle_thread_count;
+        }
+        state_mutex.mutex_unlock();
 
         CRTPServerEngine* engine = nullptr;
         event_mutex.mutex_lock();

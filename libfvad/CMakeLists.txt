@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.5)
+set(CMAKE_C_STANDARD 11)
+
 set(SOURCES common.h
             fvad.c
             signal_processing/division_operations.c
