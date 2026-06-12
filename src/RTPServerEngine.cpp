@@ -60,6 +60,12 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 			break;
 		}
 
+		header.DWFramHeadMark = ntohl(header.DWFramHeadMark);
+		if(header.DWFramHeadMark != 0x30316364) {
+			printf("\n%sInvalid frame head mark: 0x%08X", getNowTime().data(), header.DWFramHeadMark);
+			break;
+		}
+		
 		int DataType = (header.info >> 4) & 0x0F;
 		int subpackageHandleMark = header.info & 0x0F;
 
@@ -105,7 +111,6 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 		header.WdBodyLen = ntohs(header.WdBodyLen);
 		header.WdPackageSequence = ntohs(header.WdPackageSequence);
 		header.Bt8timeStamp = ntohll(header.Bt8timeStamp);
-		header.DWFramHeadMark = ntohl(header.DWFramHeadMark);
 
 		if(header.WdBodyLen > BUFF_SIZE) {
 			printf("\n%sBody length %d exceeds buffer size", getNowTime().data(), header.WdBodyLen);
