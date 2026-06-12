@@ -52,6 +52,7 @@ private:
     std::string groupID;
     int webSocketFd;
     int type;//1:群組對講, 2:AI對講
+    uint8_t pkgCnt;
 
     bool isSpeaking;
     std::vector<uint8_t> wsRecvPcm;//ws接收的pcm数据缓存

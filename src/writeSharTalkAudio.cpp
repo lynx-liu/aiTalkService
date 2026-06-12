@@ -162,6 +162,7 @@ bool SharTalkAudio::sharInit(std::string sim, uint8_t loadType)
 
     groupID.clear();
     type = 0;
+    pkgCnt = 0;
     webSocketFd = -1;
     playingStartTime = 0;
 
@@ -466,7 +467,7 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
         audioType& audioInfo = simPair.second;
 
         if (sim == currentSIM) {
-            printf(" %d", type);
+            if(pkgCnt++==0) printf(" %d", type);
             if(webSocketFd>0) {//ws连上了，可能是多变量对讲，也可能是平台对讲
                 wsplayback(audioInfo, ucOutBuff, shortPcmSize);
             }

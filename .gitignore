@@ -1,0 +1,14 @@
+# Build artifacts
+*.o
+*.log
+*.txt
+*.a
+*.so
+
+# Build directories
+libfvad/build/
+
+# Generated binaries
+src/talkShar
+
+
