@@ -119,7 +119,7 @@ void shar_network::set_fd_keepalive(int fd)
     setsockopt(fd, SOL_TCP, TCP_KEEPINTVL, (void *)&keepInterval, sizeof(keepInterval));
     setsockopt(fd, SOL_TCP, TCP_KEEPCNT, (void *)&keepCount, sizeof(keepCount));
 
-    unsigned int timeout = 1000;//设置TCP_USER_TIMEOUT参数来判断tcp连接是否断开
+    unsigned int timeout = 5000;//设置TCP_USER_TIMEOUT参数来判断tcp连接是否断开
     setsockopt(fd, IPPROTO_TCP, TCP_USER_TIMEOUT, &timeout, sizeof(timeout));
 }
 
