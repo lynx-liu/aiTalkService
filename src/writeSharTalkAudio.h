@@ -5,12 +5,21 @@
 #include "shar_http.h"
 #include "AudioDenoiser.h"
 #include <algorithm> // 包含 std::find
+#include <memory>
 #include <mutex>
+
+struct GroupAudioInfo;
 
 // forward declare libfvad context
 struct Fvad;
 
 #define BUFF_SIZE 1024
+
+struct SpeechTransition {
+    bool started;
+    bool stopped;
+    bool speaking;
+};
 
 class SharTalkAudio : public std::enable_shared_from_this<SharTalkAudio>
 {
@@ -30,6 +39,8 @@ private:
     void alter_map(audioType& audioInfo);
     uint64_t get_timestamp();
     bool isSpeechPresent(const short* pcm, int sampleCount);
+    SpeechTransition updateSpeakingState(const short* pcm, int sampleCount);
+    void refreshMainSIM(const std::shared_ptr<GroupAudioInfo>& groupInfo, int64_t currentTime);
 
     void appendPCMData(const uint8_t* pcm, size_t size);
     bool wsplayback(audioType& audioInfo, const uint8_t* pcm, int shortPcmSize);
@@ -55,6 +66,9 @@ private:
     uint8_t pkgCnt;
 
     bool isSpeaking;
+    int64_t speakingStartTime_;
+    uint16_t speechPktCounter_;
+    uint16_t silencePktCounter_;
     std::vector<uint8_t> wsRecvPcm;//ws接收的pcm数据缓存
     std::vector<uint8_t> httpRecvPcm;//http接收的pcm数据缓存
     uint32_t offset;
