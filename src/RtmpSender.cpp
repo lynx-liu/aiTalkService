@@ -1,5 +1,51 @@
 #include "RtmpSender.h"
 
+namespace {
+
+bool hasAnnexBStartCode(const uint8_t* data, int size)
+{
+    if (size < 3 || data[0] != 0x00 || data[1] != 0x00)
+        return false;
+    if (data[2] == 0x01)
+        return true;
+    return size >= 4 && data[2] == 0x00 && data[3] == 0x01;
+}
+
+int startCodeLengthAt(const uint8_t* data, int size, int offset)
+{
+    if (size - offset < 3 || data[offset] != 0x00 || data[offset + 1] != 0x00)
+        return 0;
+    if (data[offset + 2] == 0x01)
+        return 3;
+    if (size - offset >= 4 && data[offset + 2] == 0x00 && data[offset + 3] == 0x01)
+        return 4;
+    return 0;
+}
+
+int findNextStartCode(const uint8_t* data, int size, int from)
+{
+    for (int i = from; i + 2 < size; ++i) {
+        if (data[i] != 0x00 || data[i + 1] != 0x00)
+            continue;
+        if (data[i + 2] == 0x01)
+            return i;
+        if (i + 3 < size && data[i + 2] == 0x00 && data[i + 3] == 0x01)
+            return i;
+    }
+    return size;
+}
+
+void appendAvccNal(std::vector<uint8_t>& out, const uint8_t* nal, int nalSize)
+{
+    out.push_back(static_cast<uint8_t>((nalSize >> 24) & 0xFF));
+    out.push_back(static_cast<uint8_t>((nalSize >> 16) & 0xFF));
+    out.push_back(static_cast<uint8_t>((nalSize >> 8) & 0xFF));
+    out.push_back(static_cast<uint8_t>(nalSize & 0xFF));
+    out.insert(out.end(), nal, nal + nalSize);
+}
+
+} // namespace
+
 RtmpSender::RtmpSender()
     : rtmp(nullptr), packet(nullptr), packetSize(0) {}
 
@@ -32,7 +78,25 @@ bool RtmpSender::Init(const std::string& url) {
         return false;
     }
 
+    resetStreamState();
     return true;
+}
+
+void RtmpSender::resetStreamState()
+{
+    spsPpsSent_ = false;
+    hasPrevIFrame_ = false;
+    hasStreamStartTs_ = false;
+    streamStartTs_ = 0;
+}
+
+uint32_t RtmpSender::toRtmpTs(uint32_t ts)
+{
+    if (!hasStreamStartTs_) {
+        streamStartTs_ = ts;
+        hasStreamStartTs_ = true;
+    }
+    return ts - streamStartTs_;
 }
 
 void RtmpSender::Close() {
@@ -49,6 +113,7 @@ void RtmpSender::Close() {
     }
     sps.clear();
     pps.clear();
+    resetStreamState();
 }
 
 bool RtmpSender::AllocPacket(int bodySize) {
@@ -67,70 +132,117 @@ bool RtmpSender::AllocPacket(int bodySize) {
     return true;
 }
 
+void RtmpSender::handleNalUnit(const uint8_t* nal, int nalSize,
+                               std::vector<uint8_t>& avccFrame, bool& hasIdr)
+{
+    if (!nal || nalSize <= 0)
+        return;
+
+    const int nalType = nal[0] & 0x1F;
+    if (nalType == 7) {
+        sps.assign(nal, nal + nalSize);
+        return;
+    }
+    if (nalType == 8) {
+        pps.assign(nal, nal + nalSize);
+        return;
+    }
+    if (nalType == 9 || nalType == 12)
+        return;
+
+    if (nalType == 5)
+        hasIdr = true;
+
+    if (nalType == 1 || nalType == 5 || nalType == 6)
+        appendAvccNal(avccFrame, nal, nalSize);
+}
+
+bool RtmpSender::parseAnnexBFrame(const uint8_t* data, int size,
+                                  std::vector<uint8_t>& avccFrame, bool& hasIdr)
+{
+    int offset = 0;
+    bool foundNal = false;
+
+    while (offset < size) {
+        const int startCodeLen = startCodeLengthAt(data, size, offset);
+        if (startCodeLen == 0)
+            break;
+
+        const int nalStart = offset + startCodeLen;
+        const int nalEnd = findNextStartCode(data, size, nalStart);
+        const int nalSize = nalEnd - nalStart;
+        if (nalSize <= 0)
+            break;
+
+        handleNalUnit(data + nalStart, nalSize, avccFrame, hasIdr);
+        foundNal = true;
+        offset = nalEnd;
+    }
+
+    return foundNal;
+}
+
+bool RtmpSender::parseAvccFrame(const uint8_t* data, int size,
+                                std::vector<uint8_t>& avccFrame, bool& hasIdr)
+{
+    int offset = 0;
+    bool foundNal = false;
+
+    while (offset + 4 <= size) {
+        const uint32_t nalSize =
+            (static_cast<uint32_t>(data[offset]) << 24) |
+            (static_cast<uint32_t>(data[offset + 1]) << 16) |
+            (static_cast<uint32_t>(data[offset + 2]) << 8) |
+            static_cast<uint32_t>(data[offset + 3]);
+        offset += 4;
+
+        if (nalSize == 0 || offset + static_cast<int>(nalSize) > size)
+            break;
+
+        handleNalUnit(data + offset, static_cast<int>(nalSize), avccFrame, hasIdr);
+        foundNal = true;
+        offset += static_cast<int>(nalSize);
+    }
+
+    return foundNal;
+}
+
 bool RtmpSender::SendH264Frame(const uint8_t* data, int size, uint32_t ts, bool isKeyFrame)
 {
     if (!data || size <= 0 || !IsConnected())
         return false;
 
-    static bool spsPpsSent = false;
-    static bool hasPrevIFrame = false;  // 上一帧是否已发送 IDR
-
     if (isKeyFrame) {
-        spsPpsSent = false;
-        hasPrevIFrame = true; // IDR 已到，允许发送后续 P/B
-    } else if (!hasPrevIFrame) {
-        // 遇到 P/B 帧但没有前置 IDR，直接丢弃
+        spsPpsSent_ = false;
+        hasPrevIFrame_ = true;
+    } else if (!hasPrevIFrame_) {
         return true;
     }
 
-    uint32_t offset = 0;
-    while (offset < size) {
-        // 查找 start code
-        int startCodeLen = 0;
-        if (size - offset >= 3 && data[offset] == 0x00 && data[offset + 1] == 0x00) {
-            if (data[offset + 2] == 0x01) startCodeLen = 3;
-            else if (size - offset >= 4 && data[offset + 2] == 0x00 && data[offset + 3] == 0x01)
-                startCodeLen = 4;
-        }
-        if (startCodeLen == 0) break;
+    std::vector<uint8_t> avccFrame;
+    avccFrame.reserve(size + 16);
+    bool hasIdr = false;
+    bool parsed = false;
 
-        int nalStart = offset + startCodeLen;
-        int nalEnd = nalStart;
+    if (hasAnnexBStartCode(data, size))
+        parsed = parseAnnexBFrame(data, size, avccFrame, hasIdr);
+    else
+        parsed = parseAvccFrame(data, size, avccFrame, hasIdr);
 
-        // 查找下一个 start code 或包尾
-        while (nalEnd < size - 3) {
-            if (data[nalEnd] == 0x00 && data[nalEnd + 1] == 0x00 &&
-                (data[nalEnd + 2] == 0x01 || (nalEnd + 3 < size && data[nalEnd + 2] == 0x00 && data[nalEnd + 3] == 0x01)))
-                break;
-            nalEnd++;
-        }
+    if (!parsed)
+        return true;
 
-        int nalSize = nalEnd - nalStart;
-        if (nalSize <= 0) break;
-
-        int nalType = data[nalStart] & 0x1F;
-
-        if (nalType == 7) { // SPS
-            sps.assign(data + nalStart, data + nalEnd);
-        } else if (nalType == 8) { // PPS
-            pps.assign(data + nalStart, data + nalEnd);
-            if (!spsPpsSent && !sps.empty() && !pps.empty() && isKeyFrame) {
-                SendVideoSpsPps(0);
-                spsPpsSent = true;
-            }
-        } else {
-            // P/B帧容错
-            if (!hasPrevIFrame) {
-                // 遇到无前置IDR的P/B帧直接跳过
-            } else {
-                SendVideoFrame(data + nalStart, nalSize, ts, nalType == 5);
-            }
-        }
-
-        offset = nalEnd;
+    const uint32_t rtmpTs = toRtmpTs(ts);
+    if (isKeyFrame && !spsPpsSent_ && !sps.empty() && !pps.empty()) {
+        SendVideoSpsPps(rtmpTs);
+        spsPpsSent_ = true;
     }
 
-    return true;
+    if (avccFrame.empty())
+        return true;
+
+    return SendVideoFrame(avccFrame.data(), static_cast<int>(avccFrame.size()),
+                          rtmpTs, isKeyFrame || hasIdr);
 }
 
 bool RtmpSender::SendVideoFrame(const uint8_t* data, int size, uint32_t ts, bool isKeyFrame)
@@ -138,21 +250,15 @@ bool RtmpSender::SendVideoFrame(const uint8_t* data, int size, uint32_t ts, bool
     if (!data || size <= 0 || !IsConnected())
         return false;
 
-    if (!AllocPacket(size + 9))
+    if (!AllocPacket(size + 5))
         return false;
 
     char* body = packet->m_body;
     int i = 0;
 
-    body[i++] = isKeyFrame ? 0x17 : 0x27; // frame type
-    body[i++] = 0x01;                     // AVC NALU
-    body[i++] = body[i++] = body[i++] = 0x00; // compositionTime
-
-    // 写4字节NALU长度（大端）
-    body[i++] = (size >> 24) & 0xFF;
-    body[i++] = (size >> 16) & 0xFF;
-    body[i++] = (size >> 8) & 0xFF;
-    body[i++] = size & 0xFF;
+    body[i++] = isKeyFrame ? 0x17 : 0x27;
+    body[i++] = 0x01;
+    body[i++] = body[i++] = body[i++] = 0x00;
 
     memcpy(&body[i], data, size);
     i += size;
@@ -178,24 +284,22 @@ bool RtmpSender::SendVideoSpsPps(uint32_t ts)
     char* body = packet->m_body;
     int i = 0;
 
-    body[i++] = 0x17; // keyframe + AVC
-    body[i++] = 0x00; // sequence header
-    body[i++] = body[i++] = body[i++] = 0x00; // timestamp
+    body[i++] = 0x17;
+    body[i++] = 0x00;
+    body[i++] = body[i++] = body[i++] = 0x00;
 
-    body[i++] = 0x01;           // configurationVersion
-    body[i++] = sps[1];         // profile
-    body[i++] = sps[2];         // compatibility
-    body[i++] = sps[3];         // level
-    body[i++] = 0xFF;           // lengthSizeMinusOne
+    body[i++] = 0x01;
+    body[i++] = sps[1];
+    body[i++] = sps[2];
+    body[i++] = sps[3];
+    body[i++] = 0xFF;
 
-    // SPS
-    body[i++] = 0xE1; 
+    body[i++] = 0xE1;
     body[i++] = (sps.size() >> 8) & 0xFF;
     body[i++] = sps.size() & 0xFF;
     memcpy(&body[i], sps.data(), sps.size());
     i += sps.size();
 
-    // PPS
     body[i++] = 0x01;
     body[i++] = (pps.size() >> 8) & 0xFF;
     body[i++] = pps.size() & 0xFF;
@@ -211,4 +315,3 @@ bool RtmpSender::SendVideoSpsPps(uint32_t ts)
 
     return RTMP_SendPacket(rtmp, packet, TRUE);
 }
-

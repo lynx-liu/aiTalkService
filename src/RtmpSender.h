@@ -35,6 +35,17 @@ private:
     std::vector<uint8_t> sps;
     std::vector<uint8_t> pps;
 
+    bool spsPpsSent_ = false;
+    bool hasPrevIFrame_ = false;
+    bool hasStreamStartTs_ = false;
+    uint32_t streamStartTs_ = 0;
+
+    void resetStreamState();
+    uint32_t toRtmpTs(uint32_t ts);
+    bool parseAnnexBFrame(const uint8_t* data, int size, std::vector<uint8_t>& avccFrame, bool& hasIdr);
+    bool parseAvccFrame(const uint8_t* data, int size, std::vector<uint8_t>& avccFrame, bool& hasIdr);
+    void handleNalUnit(const uint8_t* nal, int nalSize, std::vector<uint8_t>& avccFrame, bool& hasIdr);
+
     bool AllocPacket(int bodySize);
     bool SendVideoSpsPps(uint32_t ts);
     bool SendVideoFrame(const uint8_t* data, int size, uint32_t ts, bool isKeyFrame);
