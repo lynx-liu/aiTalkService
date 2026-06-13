@@ -21,7 +21,7 @@ extern "C" {
     int fvad_process(Fvad* inst, const int16_t* frame, size_t length);
 }
 
-#define WAIT_MAIN_SIM_TIME  2000 //ms
+#define WAIT_MAIN_SIM_TIME  200 //ms
 #define PCM_FRAME_SIZE      640
 #define SPEECH_ON_PACKET_COUNT  15 // isSpeechPresent 连续为真，判定开始讲话
 #define SPEECH_OFF_PACKET_COUNT 50 // isSpeechPresent 连续为假，判定停止讲话
@@ -361,16 +361,23 @@ bool SharTalkAudio::httpplayback(audioType& audioInfo, const uint8_t* pcm, int s
     if(httpRecvPcm.empty() || wsRecvPcm.size()>0)
         return true;//没有AI对讲数据，或者还有未处理多变量的ws数据
 
-    if(offset+PCM_FRAME_SIZE<=httpRecvPcm.size()) {
+    if(offset<httpRecvPcm.size()) {
         if(offset==0) {
             memset(deState, 0, sizeof(adpcm_state));
             memset(enState, 0, sizeof(adpcm_state));
         }
 
-        memcpy(ucOutBuff, &httpRecvPcm[offset], PCM_FRAME_SIZE);
-        offset += PCM_FRAME_SIZE;
-        shortPcmSize = PCM_FRAME_SIZE/sizeof(short);
+        if(offset+PCM_FRAME_SIZE<=httpRecvPcm.size()) {
+            memcpy(ucOutBuff, &httpRecvPcm[offset], PCM_FRAME_SIZE);
+            offset += PCM_FRAME_SIZE;
+        } else {
+            size_t remainingSize = httpRecvPcm.size() - offset;
+            memcpy(ucOutBuff, &httpRecvPcm[offset], remainingSize);
+            memset(ucOutBuff + remainingSize, 0, PCM_FRAME_SIZE - remainingSize); // 补零
+            offset += remainingSize;
+        }
 
+        shortPcmSize = PCM_FRAME_SIZE/sizeof(short);
         push_to_device(ucOutBuff, shortPcmSize, audioInfo);
         alter_map(audioInfo);
     } else {
