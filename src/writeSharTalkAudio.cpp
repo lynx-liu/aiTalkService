@@ -121,8 +121,12 @@ void SharTalkAudio::reint()
     if (!currentSIM.empty()) {
         tiny_ws::remove_callback(currentSIM);
 
-        std::lock_guard<std::mutex> lock(pcm_mutex);
+        std::string newMainSIM;                       // 需要上报"成为主讲人"的SIM（非空才上报）
+        std::string endSIM = currentSIM;              // 需要上报"结束"的SIM
+        bool reportEnd = (type & TYPE_GROUP_TALK);
+
         {
+            std::lock_guard<std::mutex> lock(pcm_mutex);
             std::lock_guard<std::mutex> mapLock(g_group_map_mutex);
             auto groupIt = sharObjInfoMap.find(groupID);
             if (groupIt != sharObjInfoMap.end() && groupIt->second) {
@@ -137,7 +141,7 @@ void SharTalkAudio::reint()
                     if (!simMap.empty()) {
                         groupInfo->mainSIM = simMap.begin()->first;
                         groupInfo->timestamp = get_timestamp();
-                        sharHttSer->updateTalkingState(groupInfo->mainSIM, 5);  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
+                        newMainSIM = groupInfo->mainSIM;  // 锁外再上报，避免占用全局锁做HTTP
                     } else {
                         groupInfo->mainSIM.clear();  // 当前组为空了
                     }
@@ -148,11 +152,15 @@ void SharTalkAudio::reint()
                     printf("\n%sremove groupID: %s (reint), group size: %zu", getNowTime().data(), groupID.data(), sharObjInfoMap.size());
                 }
             }
-
-            if(type&TYPE_GROUP_TALK) {
-                sharHttSer->updateTalkingState(currentSIM, 4);
-            }
             currentSIM.clear();
+        }
+
+        //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
+        if (!newMainSIM.empty()) {
+            sharHttSer->updateTalkingState(newMainSIM, 5);
+        }
+        if (reportEnd) {
+            sharHttSer->updateTalkingState(endSIM, 4);
         }
     }
 }

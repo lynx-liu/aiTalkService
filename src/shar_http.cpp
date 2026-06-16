@@ -92,6 +92,8 @@ bool sharHttpSer::getTalkingInfo(std::string device, std::string& ID, int& type)
     if (curl) {
         // 设置URL
         curl_easy_setopt(curl, CURLOPT_URL, requestUrl.c_str());
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
         // 设置POST请求
         curl_easy_setopt(curl, CURLOPT_POST, 1L);
         // 设置POST字段字符串
@@ -151,6 +153,8 @@ bool sharHttpSer::updateTalkingState(std::string device, int state)
 	if (curl)
 	{	
 		curl_easy_setopt(curl, CURLOPT_URL, updateUrl.c_str());
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
         curl_easy_setopt(curl,CURLOPT_POST, 1);
         struct curl_slist *plist = curl_slist_append(NULL, "Content-Type:application/json;charset=UTF-8");
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, plist);
@@ -189,6 +193,8 @@ bool sharHttpSer::updateVoiceState(std::string id, std::string status, int playi
 	if (curl)
 	{	
 		curl_easy_setopt(curl, CURLOPT_URL, voiceStatusUrl.c_str());
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 3L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
         curl_easy_setopt(curl,CURLOPT_POST, 1);
         struct curl_slist *plist = curl_slist_append(NULL, "Content-Type:application/json;charset=UTF-8");
         curl_easy_setopt(curl, CURLOPT_HTTPHEADER, plist);
@@ -223,6 +229,8 @@ std::vector<uint8_t> sharHttpSer::POST_pcm(const std::string& device, const std:
 
     std::string url = voiceUrl + device;
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 5L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 25L);
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
 
     const char* boundary = "----Boundary123456789";  // 固定边界字符串
