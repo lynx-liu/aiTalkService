@@ -2,9 +2,11 @@
 #include <cstddef>
 #include <cstring>
 #include <cstdint>
+#include <cerrno>
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 #include <mutex>
 #include <thread>
 #include "debug.h"
@@ -40,6 +42,11 @@ struct GroupAudioInfo {
 
 static std::map<std::string, std::shared_ptr<GroupAudioInfo>> sharObjInfoMap;
 static std::mutex g_group_map_mutex;
+
+// 对端已断开等致命错误：应将该成员从群组移除，避免反复写死socket刷屏Broken pipe
+static inline bool isFatalSocketError(int e) {
+    return e == EPIPE || e == ECONNRESET || e == EBADF || e == ENOTCONN || e == ENOTSOCK;
+}
 
 SharTalkAudio::SharTalkAudio(const CONFIG ServerConfig)
 {
@@ -479,6 +486,7 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
         refreshMainSIM(groupInfo, currentTime);
     }
 
+    std::vector<std::string> deadSims;
     for (auto& simPair : simMap) {
         const std::string& sim = simPair.first;
         audioType& audioInfo = simPair.second;
@@ -508,8 +516,16 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
         }
 
         //群组对讲
-        push_to_device(ucOutBuff, shortPcmSize, audioInfo);
+        if(!push_to_device(ucOutBuff, shortPcmSize, audioInfo)) {
+            deadSims.push_back(sim);//对端已断开，记录待移除，避免反复写出现Broken pipe刷屏
+            continue;
+        }
         alter_map(audioInfo); 
+    }
+
+    for (const auto& s : deadSims) {
+        simMap.erase(s);
+        printf("\n%sremove dead SIM: %s from group (write failed), currentGroup size: %zu", getNowTime().data(), s.c_str(), simMap.size());
     }
     return true;
 }
@@ -534,7 +550,7 @@ bool SharTalkAudio::push_to_device(const uint8_t* pcm, int shortPcmSize, audioTy
         adpcm_coder((short*)pcm, (char*)(audioEncodeBuf+8), shortPcmSize, enState);
 		BodyLen = (shortPcmSize / 2) + 8;
 	}else{
-        return false;
+        return true;//编码类型不支持，非socket断开，保留成员
     }
 	return write_data(audioInfo, BodyLen);
 }
@@ -559,19 +575,22 @@ bool SharTalkAudio::write_data(audioType& audioInfo, uint16_t BodyLen)
     }
 #endif
 
+	// 返回值约定：true=保留该成员(成功或临时错误)，false=对端已断需移除
 	if(!(write(audioInfo.socketFd, &pkg, offsetof(RTP_PKG_HEADER, BCDSIMCardNumber)+audioInfo.BCDSIMLen) &&
         write(audioInfo.socketFd, (uint8_t*)&pkg + offsetof(RTP_PKG_HEADER, Bt1LogicChannelNumber), sizeof(RTP_PKG_HEADER) - offsetof(RTP_PKG_HEADER, Bt1LogicChannelNumber))))
     {
+		int err = errno;
 		perror("\nerrno:");
-		return false;
+		return !isFatalSocketError(err);
 	}
  
 	int count = 0;
 	do{
         int size = write(audioInfo.socketFd, audioEncodeBuf+count, BodyLen-count);
 		if(size < 0){
+			int err = errno;
 			perror("\nerrno:");
-			return false;
+			return !isFatalSocketError(err);
 		}
 		count += size;
 	}while ((0 < count) && (count<BodyLen));
