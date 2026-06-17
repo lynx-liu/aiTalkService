@@ -4,6 +4,7 @@
 #include "../json/json.h"
 #include "debug.h"
 #include "tiny_ws.h"
+#include "audioType.h"
 
 namespace tiny_ws {
 
@@ -306,6 +307,7 @@ void handle_client(int cli_fd) {
                 }
             } else {
                 sim = getShortSIM(payloadStr);
+                type = TYPE_WS_WEB_TALK;//ws以非json形式连接, 视为平台对讲(优先级最高)
             }
 
             std::function<void(int)> cb;
@@ -319,7 +321,7 @@ void handle_client(int cli_fd) {
                         it->second.fd = cli_fd;
                         printf("\n%supdate ws, SIM: %s", getNowTime().data(), sim.c_str());
                     } else {
-                        if(type==0) {// 新的平台连接，优先级最高
+                        if(type & TYPE_WS_WEB_TALK) {// 新的平台连接，优先级最高
                             printf("\n%sreplace ws, SIM: %s", getNowTime().data(), sim.c_str());
                             close(it->second.fd); // 关闭旧连接
                             it->second.fd = cli_fd;
@@ -345,7 +347,7 @@ void handle_client(int cli_fd) {
                 uint8_t response[] = "success";//已注册回调表示设备已连接，应答ws表示成功
                 send_frame(cli_fd, BIN, response, sizeof(response)-1);
             } else {
-                if(type==0) {// 平台对讲不等设备的TCP连接，直接返回成功
+                if(type & TYPE_WS_WEB_TALK) {// 平台对讲不等设备的TCP连接，直接返回成功
                     uint8_t response[] = "success";
                     send_frame(cli_fd, BIN, response, sizeof(response)-1);
                 }

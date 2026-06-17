@@ -28,11 +28,6 @@ extern "C" {
 #define SPEECH_ON_PACKET_COUNT  15 // isSpeechPresent 连续为真，判定开始讲话
 #define SPEECH_OFF_PACKET_COUNT 50 // isSpeechPresent 连续为假，判定停止讲话
 
-#define TYPE_WS_WEB_TALK    0x00 //通过websocket平台对讲
-#define TYPE_GROUP_TALK     0x01 //群组对讲
-#define TYPE_AI_TALK        0x02 //AI对讲
-#define TYPE_WS_VAR_TALK    0x04 //多变量通知触发的对讲
-
 struct GroupAudioInfo {
     std::mutex mtx;
     std::string mainSIM;
@@ -497,7 +492,7 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
                 wsplayback(audioInfo, ucOutBuff, shortPcmSize);
             }
             
-            if(type&TYPE_WS_VAR_TALK || type&TYPE_AI_TALK) {//多变量对讲 或 AI对讲
+            if(!(type&TYPE_WS_WEB_TALK) && (type&TYPE_WS_VAR_TALK || type&TYPE_AI_TALK)) {//平台对讲独占, 不处理AI/多变量对讲
                 httpplayback(audioInfo, ucOutBuff, shortPcmSize);
             }
             continue;
@@ -507,8 +502,8 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
             continue;//不是主讲人，不发送对讲数据
         }
 
-        if(type&TYPE_WS_VAR_TALK || type&TYPE_AI_TALK) {
-            continue;//多变量对讲或AI对讲不做群组广播，避免同组成员互相串音
+        if(type&TYPE_WS_VAR_TALK || type&TYPE_AI_TALK || type&TYPE_WS_WEB_TALK) {
+            continue;//多变量/AI/平台对讲不做群组广播, 避免同组串音
         }
 
         if(tiny_ws::get_client_fd(sim) > 0) {//主讲人不向已打开ws的用户发送对讲数据
