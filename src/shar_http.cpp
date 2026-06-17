@@ -167,11 +167,11 @@ bool sharHttpSer::updateTalkingState(std::string device, int state)
         CURLcode res = curl_easy_perform(curl);
 		if (res != CURLE_OK)
 		{
-			printf("\n%s %scurl_easy_perform() failed: %s", device, getNowTime().data(), curl_easy_strerror(res));
+			printf("\n%s %scurl_easy_perform() failed: %s", device.c_str(), getNowTime().data(), curl_easy_strerror(res));
 		}
 		else
 		{
-			printf("\n%s %sstrResponse is: %s", device, getNowTime().data(), strResponse.data());
+			printf("\n%s %sstrResponse is: %s", device.c_str(), getNowTime().data(), strResponse.c_str());
             result = getResult(strResponse);
 		}
 
