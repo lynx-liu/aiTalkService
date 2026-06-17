@@ -185,10 +185,15 @@ bool RtmpSender::parseAnnexBFrame(const uint8_t* data, int size,
 bool RtmpSender::parseAvccFrame(const uint8_t* data, int size,
                                 std::vector<uint8_t>& avccFrame, bool& hasIdr)
 {
-    int offset = 0;
+    if (size < 4)
+        return false;
+
+    // 全程使用无符号 size_t 运算，避免 nalSize 高位置位时转 int 变负导致越界
+    const size_t total = static_cast<size_t>(size);
+    size_t offset = 0;
     bool foundNal = false;
 
-    while (offset + 4 <= size) {
+    while (offset + 4 <= total) {
         const uint32_t nalSize =
             (static_cast<uint32_t>(data[offset]) << 24) |
             (static_cast<uint32_t>(data[offset + 1]) << 16) |
@@ -196,12 +201,13 @@ bool RtmpSender::parseAvccFrame(const uint8_t* data, int size,
             static_cast<uint32_t>(data[offset + 3]);
         offset += 4;
 
-        if (nalSize == 0 || offset + static_cast<int>(nalSize) > size)
+        // total - offset 不会下溢（循环条件保证 offset <= total）
+        if (nalSize == 0 || nalSize > total - offset)
             break;
 
         handleNalUnit(data + offset, static_cast<int>(nalSize), avccFrame, hasIdr);
         foundNal = true;
-        offset += static_cast<int>(nalSize);
+        offset += nalSize;
     }
 
     return foundNal;
