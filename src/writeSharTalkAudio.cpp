@@ -507,8 +507,8 @@ bool SharTalkAudio::write_shar_device(uint8_t *data, uint16_t size)
             continue;//不是主讲人，不发送对讲数据
         }
 
-        if(type&TYPE_WS_VAR_TALK) {
-            continue;//多变量对讲开启时禁用群组对讲
+        if(type&TYPE_WS_VAR_TALK || type&TYPE_AI_TALK) {
+            continue;//多变量对讲或AI对讲不做群组广播，避免同组成员互相串音
         }
 
         if(tiny_ws::get_client_fd(sim) > 0) {//主讲人不向已打开ws的用户发送对讲数据
