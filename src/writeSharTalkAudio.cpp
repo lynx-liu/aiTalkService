@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <sys/socket.h>
 #include <cstddef>
 #include <cstring>
 #include <cstdint>
@@ -41,6 +42,29 @@ static std::mutex g_group_map_mutex;
 // 对端已断开等致命错误：应将该成员从群组移除，避免反复写死socket刷屏Broken pipe
 static inline bool isFatalSocketError(int e) {
     return e == EPIPE || e == ECONNRESET || e == EBADF || e == ENOTCONN || e == ENOTSOCK;
+}
+
+// 非阻塞发送；全部写完返回 true。未写完时 fatal 区分致命/临时(EAGAIN)错误
+static inline bool sendAllNonblock(int fd, const void* data, size_t len, bool& fatal) {
+    fatal = false;
+    const uint8_t* p = static_cast<const uint8_t*>(data);
+    size_t sent = 0;
+    while (sent < len) {
+        ssize_t n = send(fd, p + sent, len - sent, MSG_NOSIGNAL | MSG_DONTWAIT);
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            fatal = isFatalSocketError(errno);
+            return false;
+        }
+        if (n == 0) {
+            fatal = true;
+            printf("\n%ssend returned 0, error", getNowTime().data());
+            return false;
+        }
+        sent += static_cast<size_t>(n);
+    }
+    return true;
 }
 
 SharTalkAudio::SharTalkAudio(const CONFIG ServerConfig)
@@ -571,24 +595,23 @@ bool SharTalkAudio::write_data(audioType& audioInfo, uint16_t BodyLen)
 #endif
 
 	// 返回值约定：true=保留该成员(成功或临时错误)，false=对端已断需移除
-	if(!(write(audioInfo.socketFd, &pkg, offsetof(RTP_PKG_HEADER, BCDSIMCardNumber)+audioInfo.BCDSIMLen) &&
-        write(audioInfo.socketFd, (uint8_t*)&pkg + offsetof(RTP_PKG_HEADER, Bt1LogicChannelNumber), sizeof(RTP_PKG_HEADER) - offsetof(RTP_PKG_HEADER, Bt1LogicChannelNumber))))
-    {
-		int err = errno;
-		perror("\nerrno:");
-		return !isFatalSocketError(err);
-	}
- 
-	int count = 0;
-	do{
-        int size = write(audioInfo.socketFd, audioEncodeBuf+count, BodyLen-count);
-		if(size < 0){
-			int err = errno;
+	bool fatal = false;
+	const size_t head1 = offsetof(RTP_PKG_HEADER, BCDSIMCardNumber) + audioInfo.BCDSIMLen;
+	const size_t head2 = sizeof(RTP_PKG_HEADER) - offsetof(RTP_PKG_HEADER, Bt1LogicChannelNumber);
+
+	if (!sendAllNonblock(audioInfo.socketFd, &pkg, head1, fatal) ||
+	    !sendAllNonblock(audioInfo.socketFd,
+	        (uint8_t*)&pkg + offsetof(RTP_PKG_HEADER, Bt1LogicChannelNumber), head2, fatal)) {
+		if (fatal)
 			perror("\nerrno:");
-			return !isFatalSocketError(err);
-		}
-		count += size;
-	}while ((0 < count) && (count<BodyLen));
+		return !fatal;
+	}
+
+	if (!sendAllNonblock(audioInfo.socketFd, audioEncodeBuf, BodyLen, fatal)) {
+		if (fatal)
+			perror("\nerrno:");
+		return !fatal;
+	}
 
 	return true;
 }
