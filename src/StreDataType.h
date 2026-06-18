@@ -5,6 +5,7 @@
 #include <netinet/in.h>
 #include <sys/time.h>
 #include <queue>
+#include "g726.h"
 #include "adpcm.h"
 #include "g711.h"
 #include "config.h"

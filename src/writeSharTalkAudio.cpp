@@ -67,15 +67,27 @@ static inline bool sendAllNonblock(int fd, const void* data, size_t len, bool& f
     return true;
 }
 
+static inline void resetCodecStates(adpcm_state* de, adpcm_state* en, g726_codec_state* g726)
+{
+    if (de)
+        memset(de, 0, sizeof(adpcm_state));
+    if (en)
+        memset(en, 0, sizeof(adpcm_state));
+    if (g726)
+        g726_codec_init(g726);
+}
+
 SharTalkAudio::SharTalkAudio(const CONFIG ServerConfig)
 {
     pAudioDenoiser = new AudioDenoiser(8000);
 
     ucOutBuff = new uint8_t[BUFF_SIZE]();
     deState = new adpcm_state();
+    g726State = new g726_codec_state();
 
     audioEncodeBuf = new uint8_t[BUFF_SIZE]();
     enState = new adpcm_state();
+    g726_codec_init(g726State);
 
     sharHttSer= new sharHttpSer(ServerConfig);
     currentSIM.clear();
@@ -100,6 +112,10 @@ SharTalkAudio::~SharTalkAudio()
     if (deState){
         delete deState;
         deState = nullptr;
+    }
+    if (g726State){
+        delete g726State;
+        g726State = nullptr;
     }
     if(audioEncodeBuf){
 		delete [] audioEncodeBuf;
@@ -141,8 +157,7 @@ void SharTalkAudio::reint()
 
     if(ucOutBuff) memset(ucOutBuff, 0, BUFF_SIZE);
     if(audioEncodeBuf) memset(audioEncodeBuf, 0, BUFF_SIZE);
-    if(deState) memset(deState, 0, sizeof(adpcm_state));
-    if(enState) memset(enState, 0, sizeof(adpcm_state));
+    resetCodecStates(deState, enState, g726State);
 
     if (!currentSIM.empty()) {
         tiny_ws::remove_callback(currentSIM);
@@ -247,8 +262,7 @@ bool SharTalkAudio::sharInit(std::string sim, uint8_t loadType)
                         self->webSocketFd = tiny_ws::get_client_fd(self->currentSIM);
                     }
 
-                    memset(self->deState, 0, sizeof(adpcm_state));
-                    memset(self->enState, 0, sizeof(adpcm_state));
+                    resetCodecStates(self->deState, self->enState, self->g726State);
                     printf("\n%sReceived type change: %d --> %d , fd= %d", getNowTime().data(), type, self->type, self->webSocketFd);
                 }
             }, [weak_this](int type) {
@@ -260,8 +274,7 @@ bool SharTalkAudio::sharInit(std::string sim, uint8_t loadType)
                     }
                     printf("\n%sws disconnected, type: %d --> %d", getNowTime().data(), type, self->type);
 
-                    memset(self->deState, 0, sizeof(adpcm_state));
-                    memset(self->enState, 0, sizeof(adpcm_state));
+                    resetCodecStates(self->deState, self->enState, self->g726State);
 
                     {
                         std::lock_guard<std::mutex> mapLock(g_group_map_mutex);
@@ -397,8 +410,7 @@ bool SharTalkAudio::httpplayback(audioType& audioInfo, const uint8_t* pcm, int s
 
     if(offset<httpRecvPcm.size()) {
         if(offset==0) {
-            memset(deState, 0, sizeof(adpcm_state));
-            memset(enState, 0, sizeof(adpcm_state));
+            resetCodecStates(deState, enState, g726State);
         }
 
         if(offset+PCM_FRAME_SIZE<=httpRecvPcm.size()) {
@@ -568,6 +580,10 @@ bool SharTalkAudio::push_to_device(const uint8_t* pcm, int shortPcmSize, audioTy
 		audioEncodeBuf[7] = 0x00;
         adpcm_coder((short*)pcm, (char*)(audioEncodeBuf+8), shortPcmSize, enState);
 		BodyLen = (shortPcmSize / 2) + 8;
+	}else if((audioInfo.type&0x7F) == LOAD_TYPE_G726){
+        BodyLen = (uint16_t)g726_encode_32(g726State, (const short*)pcm, shortPcmSize, audioEncodeBuf);
+        if(BodyLen == 0)
+            return true;
 	}else{
         return true;//编码类型不支持，非socket断开，保留成员
     }
@@ -625,6 +641,8 @@ int SharTalkAudio::audio_decoder(uint8_t *data, uint16_t size)
         return g711a_decode((short*)ucOutBuff, data, size);
     }else if(audio_type == LOAD_TYPE_ADPCM){ 
         return ADPCM_decode(data, size);
+    }else if(audio_type == LOAD_TYPE_G726){
+        return G726_decode(data, size);
     }else{
         printf("\n%saudio_type error: %d", getNowTime().data(), audio_type);
     }
@@ -644,6 +662,20 @@ int SharTalkAudio::ADPCM_decode(uint8_t *data, uint16_t size)
     deState->index = data[2];
     adpcm_decoder((char*)(data +4), (short*)ucOutBuff, size - 4, deState);
     return (size - 4) * 4;
+}
+
+int SharTalkAudio::G726_decode(uint8_t *data, uint16_t size)
+{
+    const uint8_t* payload = data;
+    uint16_t payloadSize = size;
+
+    // 海思等设备可能在G726帧前附加4字节帧头
+    if (size > 4 && data[0] == 0x00 && data[1] == 0x01) {
+        payload = data + 4;
+        payloadSize = size - 4;
+    }
+
+    return g726_decode_32(g726State, payload, payloadSize, (short*)ucOutBuff) * (int)sizeof(short);
 }
 
 bool SharTalkAudio::isSpeechPresent(const short* pcm, int sampleCount)
@@ -702,8 +734,7 @@ void SharTalkAudio::refreshMainSIM(const std::shared_ptr<GroupAudioInfo>& groupI
                 sharHttSer->updateTalkingState(sim, 5);  //1.链接成功 2.离线  3. 正在进行 4.结束, 5. 成为主讲人
             }).detach();
 
-            memset(deState, 0, sizeof(adpcm_state));
-            memset(enState, 0, sizeof(adpcm_state));
+            resetCodecStates(deState, enState, g726State);
         }
     } else {
         groupInfo->timestamp = currentTime;

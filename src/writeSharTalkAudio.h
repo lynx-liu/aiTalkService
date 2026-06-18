@@ -32,6 +32,7 @@ public:
     void reint();
 private:
     int ADPCM_decode(uint8_t *data, uint16_t size);
+    int G726_decode(uint8_t *data, uint16_t size);
     int audio_decoder(uint8_t *data, uint16_t size);
     bool push_to_device(const uint8_t* pcm, int shortPcmSize, audioType& audioInfo);
     bool write_data(audioType& audioInfo, uint16_t BodyLen);
@@ -54,6 +55,7 @@ private:
 
     uint8_t* ucOutBuff;
     adpcm_state* deState;
+    g726_codec_state* g726State;
 
     //write 
     adpcm_state* enState;
