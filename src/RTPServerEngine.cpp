@@ -45,6 +45,7 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 	
 	std::shared_ptr<RtmpSender> m_RtmpSender;
 	std::vector<uint8_t> videoFrameBuf;
+	std::string rtmpUrl;
 
 	while(true) {
 		memset(&header, 0, sizeof(RTP_PKG_HEADER));
@@ -132,7 +133,7 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 				videoFrameBuf.clear();
 
 				std::string liveName = m_BCDSIMStr + "_" + std::to_string(header.Bt1LogicChannelNumber);
-				std::string rtmpUrl = "rtmp://192.168.0.85:1935/live/"+liveName;
+				rtmpUrl = "rtmp://192.168.0.85:1935/live/"+liveName;
 				if(bcdLen == 10) {
 					std::string key = "2bd8c611ec3498d791595df39669a904";
 					std::string timeHexStr = getPushTimeHexString();//获取有效时间戳
@@ -145,11 +146,6 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 				printf("\n%sRTMP URL: %s", getNowTime().data(), rtmpUrl.c_str());
 
 				m_RtmpSender = std::make_shared<RtmpSender>();
-				if (!m_RtmpSender->Init(rtmpUrl)) {
-					m_RtmpSender.reset();
-					printf("\n%sFailed to initialize RTMP sender", getNowTime().data());
-					break;
-				}
 			}
 		}
 
@@ -189,6 +185,17 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 				videoFrameBuf.insert(videoFrameBuf.end(), data.get(), data.get() + header.WdBodyLen);
 
 				if(subpackageHandleMark == PKG_FLAG_ATOM || subpackageHandleMark == PKG_FLAG_LAST) {
+					if (!m_RtmpSender->IsConnected() && !rtmpUrl.empty()) {
+
+						if (!m_RtmpSender->Init(rtmpUrl)) {
+							printf("\n%sFailed to initialize RTMP sender, SIM=%s ch=%u", getNowTime().data(), m_BCDSIMStr.c_str(), header.Bt1LogicChannelNumber);
+							m_RtmpSender.reset();
+							rtmpUrl.clear();
+							break;
+						}
+						rtmpUrl.clear();
+					}
+
 					bool isKeyFrame = (DataType == DATA_TYPE_VIDE_I);
 					if (!m_RtmpSender->SendH264Frame(videoFrameBuf.data(), videoFrameBuf.size(), header.Bt8timeStamp, isKeyFrame)) {
 						printf("\n%sFailed to send H264 frame", getNowTime().data());
