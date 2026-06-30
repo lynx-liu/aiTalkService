@@ -12,6 +12,7 @@
 
 #define LOAD_TYPE_G711A 0x06 // G.711A
 #define LOAD_TYPE_G726 0x08  // G.726
+#define LOAD_TYPE_LPCM 0x12  // LPCM
 #define LOAD_TYPE_ADPCM 0x1A // ADPCM
 
 inline uint64_t htonll(uint64_t val) {return (((uint64_t)htonl(val))<<32)+htonl(val>>32);}

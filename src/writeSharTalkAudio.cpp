@@ -572,6 +572,9 @@ bool SharTalkAudio::push_to_device(const uint8_t* pcm, int shortPcmSize, audioTy
     if((audioInfo.type&0x7F) == LOAD_TYPE_G711A){
         g711a_encode(audioEncodeBuf, (short*)pcm, shortPcmSize);
 		BodyLen = shortPcmSize;
+	}else if((audioInfo.type&0x7F) == LOAD_TYPE_LPCM){
+        BodyLen = (uint16_t)(shortPcmSize * (int)sizeof(short));
+        memcpy(audioEncodeBuf, pcm, BodyLen);
 	}else if((audioInfo.type&0x7F) == LOAD_TYPE_ADPCM){
 		memcpy(audioEncodeBuf,audioInfo.ADPCM_8, 4);
 		audioEncodeBuf[4] = (enState->valprev & 0xff);
@@ -639,6 +642,9 @@ int SharTalkAudio::audio_decoder(uint8_t *data, uint16_t size)
 
     if(audio_type == LOAD_TYPE_G711A){
         return g711a_decode((short*)ucOutBuff, data, size);
+    }else if(audio_type == LOAD_TYPE_LPCM){
+        memcpy(ucOutBuff, data, size);
+        return size;
     }else if(audio_type == LOAD_TYPE_ADPCM){ 
         return ADPCM_decode(data, size);
     }else if(audio_type == LOAD_TYPE_G726){
