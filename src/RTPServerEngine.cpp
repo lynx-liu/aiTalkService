@@ -28,7 +28,6 @@ CRTPServerEngine::~CRTPServerEngine()
 	}
 
 	if(!m_BCDSIMStr.empty()){
-		printf("\n%sremoved device SIM: %s\n", getNowTime().data(), m_BCDSIMStr.c_str());
 		del_audio_type_info(m_BCDSIMStr);
 		m_BCDSIMStr.clear();
 	}
@@ -46,6 +45,10 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 	std::shared_ptr<RtmpSender> m_RtmpSender;
 	std::vector<uint8_t> videoFrameBuf;
 	std::string rtmpUrl;
+	struct timeval videoStart = {};
+	bool videoActive = false;
+	uint32_t videoChannel = 0;
+	int videoFramesSent = 0;
 
 	while(true) {
 		memset(&header, 0, sizeof(RTP_PKG_HEADER));
@@ -146,6 +149,10 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 				printf("\n%sRTMP URL: %s", getNowTime().data(), rtmpUrl.c_str());
 
 				m_RtmpSender = std::make_shared<RtmpSender>();
+				gettimeofday(&videoStart, nullptr);
+				videoActive = true;
+				videoChannel = header.Bt1LogicChannelNumber;
+				videoFramesSent = 0;
 			}
 		}
 
@@ -201,6 +208,7 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 						printf("\n%sFailed to send H264 frame", getNowTime().data());
 						break;
 					}
+					++videoFramesSent;
 
 					videoFrameBuf.clear();
 				}
@@ -216,6 +224,14 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 	}
 
 	if(m_RtmpSender) {
+		if (videoActive) {
+			struct timeval videoEnd = {};
+			gettimeofday(&videoEnd, nullptr);
+			const double durSec = (videoEnd.tv_sec - videoStart.tv_sec)
+				+ (videoEnd.tv_usec - videoStart.tv_usec) / 1000000.0;
+			printf("\n%svideo session end sim=%s ch=%u dur=%.2fs frames=%d fd=%d\n",
+				getNowTime().data(), m_BCDSIMStr.c_str(), videoChannel, durSec, videoFramesSent, sockFd);
+		}
 		m_RtmpSender->Close();
 		m_RtmpSender.reset();
 	}

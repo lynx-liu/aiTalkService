@@ -190,7 +190,7 @@ void SharTalkAudio::reint()
 
                 if (simMap.empty()) {
                     sharObjInfoMap.erase(groupIt);
-                    printf("\n%sremove groupID: %s (reint), group size: %zu", getNowTime().data(), groupID.data(), sharObjInfoMap.size());
+                    printf("\n%sremove groupID: %s (reint), group size: %zu\n", getNowTime().data(), groupID.data(), sharObjInfoMap.size());
                 }
             }
             currentSIM.clear();
