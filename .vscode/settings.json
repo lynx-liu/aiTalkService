@@ -70,5 +70,6 @@
         "csignal": "cpp",
         "regex": "cpp",
         "shared_mutex": "cpp"
-    }
+    },
+    "cmake.sourceDirectory": "/data/aiTalkService/libfvad"
 }
