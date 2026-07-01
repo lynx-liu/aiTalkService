@@ -136,27 +136,44 @@ void shar_network::run()
 
     for(;;){
         reWait = epoll_wait(epollfd , events, EVENTS_MAXIM , -1);
+        if (reWait < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            perror("epoll_wait");
+            continue;
+        }
         for(index =0; index < reWait; index++){
             fd = events[index].data.fd;
+            const uint32_t ev = events[index].events;
 
             if(fd == wsockFd){
-                _fd = accept(fd, (struct sockaddr *)&clientaddr, &m_clilen);
-                if(_fd < 0){
-                    printf("\n%saccept connect fail (_fd:%d).", getNowTime().data(), _fd);
-                    continue;
-                }
+                // listen fd is EPOLLET + nonblocking: drain accept queue until EAGAIN
+                for(;;){
+                    _fd = accept(fd, (struct sockaddr *)&clientaddr, &m_clilen);
+                    if(_fd < 0){
+                        if(errno == EAGAIN || errno == EWOULDBLOCK) {
+                            break;
+                        }
+                        if(errno == EINTR) {
+                            continue;
+                        }
+                        printf("\n%saccept connect fail (_fd:%d, err:%d).", getNowTime().data(), _fd, errno);
+                        break;
+                    }
 #if DEBUG
-                char ip[32] = {0};
-                inet_ntop(AF_INET, &clientaddr.sin_addr, ip, sizeof(ip));
-                printf("\n%saccept fd=%d, from %s:%d", getNowTime().data(), _fd, ip, ntohs(clientaddr.sin_port));
+                    char ip[32] = {0};
+                    inet_ntop(AF_INET, &clientaddr.sin_addr, ip, sizeof(ip));
+                    printf("\n%saccept fd=%d, from %s:%d", getNowTime().data(), _fd, ip, ntohs(clientaddr.sin_port));
 #endif
-                set_fd_keepalive(_fd);
-                addfd(_fd,true);
-            }else if(events[index].events & EPOLLIN){
+                    set_fd_keepalive(_fd);
+                    addfd(_fd,true);
+                }
+            }else if(ev & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)){
+                close(fd);
+            }else if(ev & EPOLLIN){
                 workPool->add_to_queue(fd);
                 epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, NULL);
-            }else if(events[index].events & (EPOLLIN | EPOLLRDHUP)){
-                printf("\n%sclose fd.", getNowTime().data());
             }
         }
     }
