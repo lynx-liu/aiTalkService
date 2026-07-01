@@ -41,6 +41,7 @@ private:
 
 private:
     int                     sockFd;
+    CONFIG                  m_serverConfig;
     std::string             m_BCDSIMStr;    //SIM号
     std::shared_ptr<SharTalkAudio> _sharTalkstrue;
 };

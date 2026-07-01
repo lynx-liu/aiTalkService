@@ -16,7 +16,7 @@
 CRTPServerEngine::CRTPServerEngine(const int fd, const CONFIG ServerConfig)
 {
 	sockFd = fd;
-	_sharTalkstrue = std::make_shared<SharTalkAudio>(ServerConfig);
+	m_serverConfig = ServerConfig;
 }
 
 CRTPServerEngine::~CRTPServerEngine()
@@ -49,23 +49,29 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 	bool videoActive = false;
 	uint32_t videoChannel = 0;
 	int videoFramesSent = 0;
+	std::string endReason = "peer_close";
 
 	while(true) {
 		memset(&header, 0, sizeof(RTP_PKG_HEADER));
 		int ret = recv(sockFd, &header, nFixHeadSize, MSG_WAITALL);
-		if(ret==0) break;
+		if(ret==0) {
+			endReason = "peer_close";
+			break;
+		}
 		
 		if(ret < 0)
 		{
-			if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR || errno == ECONNRESET) {
+			if (errno == EINTR) {
 				continue;
 			}
+			endReason = (errno == EAGAIN || errno == EWOULDBLOCK) ? "rtp_header_timeout" : "rtp_header_error";
 			printf("\n%sFailed to receive RTP header, fd=%d, err:%d", getNowTime().data(), sockFd, errno);
 			break;
 		}
 
 		header.DWFramHeadMark = ntohl(header.DWFramHeadMark);
 		if(header.DWFramHeadMark != 0x30316364) {
+			endReason = "invalid_frame_head";
 			printf("\n%sInvalid frame head mark: 0x%08X", getNowTime().data(), header.DWFramHeadMark);
 			break;
 		}
@@ -90,11 +96,13 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 		}
 
 		if(DataType >= DATA_TYPE_TRANSM || subpackageHandleMark>PKG_FLAG_MIDDLE) {//透传数据不处理,包标错误不处理
+			endReason = "unsupported_data_type";
 			printf("\n%sUnsupported DataType:0x%02X or subpackageHandleMark: %0d", getNowTime().data(), DataType, subpackageHandleMark);
 			break;
 		}
 
 		if(recv(sockFd, (uint8_t*)&header.Bt8timeStamp+offset, sizeof(header.Bt8timeStamp)-offset, MSG_WAITALL)<=0) {
+			endReason = "rtp_timestamp_recv_fail";
 			printf("\n%sFailed to receive RTP timestamp", getNowTime().data());
 			break;
 		}
@@ -102,12 +110,14 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 		if(DataType < DATA_TYPE_AUDIO) {//视频 Last IFrame Interval 与 Last Frame Interval
 			uint32_t videoTimestamp = 0;
 			if (recv(sockFd, &videoTimestamp, sizeof(videoTimestamp), MSG_WAITALL) <= 0) {
+				endReason = "video_timestamp_recv_fail";
 				printf("\n%sFailed to receive video timestamp", getNowTime().data());
 				break;
 			}
 		}
 		
 		if(recv(sockFd, &header.WdBodyLen, sizeof(header.WdBodyLen), MSG_WAITALL)<=0) {
+			endReason = "rtp_body_len_recv_fail";
 			printf("\n%sFailed to receive RTP body length", getNowTime().data());
 			break;
 		}
@@ -117,6 +127,7 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 		header.Bt8timeStamp = ntohll(header.Bt8timeStamp);
 
 		if(header.WdBodyLen > BUFF_SIZE) {
+			endReason = "rtp_body_oversize";
 			printf("\n%sBody length %d exceeds buffer size", getNowTime().data(), header.WdBodyLen);
 			break;
 		}
@@ -125,11 +136,16 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 			get_device_SIM(header.BCDSIMCardNumber, bcdLen);
 
 			if(DataType == DATA_TYPE_AUDIO) {
+				if (!_sharTalkstrue) {
+					_sharTalkstrue = std::make_shared<SharTalkAudio>(m_serverConfig);
+				}
 				if(!insert_talk_info(data.get(), header, bcdLen))
 					break;
 							
-				if(!_sharTalkstrue->sharInit(m_BCDSIMStr, header.type))
+				if(!_sharTalkstrue->sharInit(m_BCDSIMStr, header.type)) {
+					endReason = "audio_shar_init_fail";
 					break;
+				}
 			} else {
 				if(videoFrameBuf.empty())
 					videoFrameBuf.reserve(VIDEO_FRAME_SIZE);
@@ -148,7 +164,6 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 				}
 				printf("\n%sRTMP URL: %s", getNowTime().data(), rtmpUrl.c_str());
 
-				m_RtmpSender = std::make_shared<RtmpSender>();
 				gettimeofday(&videoStart, nullptr);
 				videoActive = true;
 				videoChannel = header.Bt1LogicChannelNumber;
@@ -174,11 +189,12 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 #endif
 
 		if(recv(sockFd, data.get(), header.WdBodyLen, MSG_WAITALL)<=0) {
+			endReason = "rtp_body_recv_fail";
 			printf("\n%sFailed to receive RTP body", getNowTime().data());
 			break;
 		}
 
-		if(m_RtmpSender) {
+		if(videoActive) {
 			if(DataType < DATA_TYPE_AUDIO) {
 				if(subpackageHandleMark == PKG_FLAG_ATOM || subpackageHandleMark == PKG_FLAG_FIRST) {
 					videoFrameBuf.clear();
@@ -192,20 +208,22 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 				videoFrameBuf.insert(videoFrameBuf.end(), data.get(), data.get() + header.WdBodyLen);
 
 				if(subpackageHandleMark == PKG_FLAG_ATOM || subpackageHandleMark == PKG_FLAG_LAST) {
-					if (!m_RtmpSender->IsConnected() && !rtmpUrl.empty()) {
-
+					if (!m_RtmpSender && !rtmpUrl.empty()) {
+						m_RtmpSender = std::make_shared<RtmpSender>();
 						if (!m_RtmpSender->Init(rtmpUrl)) {
+							endReason = "rtmp_init_fail";
 							printf("\n%sFailed to initialize RTMP sender, SIM=%s ch=%u", getNowTime().data(), m_BCDSIMStr.c_str(), header.Bt1LogicChannelNumber);
 							m_RtmpSender.reset();
-							rtmpUrl.clear();
 							break;
 						}
 						rtmpUrl.clear();
 					}
 
 					bool isKeyFrame = (DataType == DATA_TYPE_VIDE_I);
-					if (!m_RtmpSender->SendH264Frame(videoFrameBuf.data(), videoFrameBuf.size(), header.Bt8timeStamp, isKeyFrame)) {
+					if (!m_RtmpSender || !m_RtmpSender->SendH264Frame(videoFrameBuf.data(), videoFrameBuf.size(), header.Bt8timeStamp, isKeyFrame)) {
+						endReason = "h264_send_fail";
 						printf("\n%sFailed to send H264 frame", getNowTime().data());
+						m_RtmpSender.reset();
 						break;
 					}
 					++videoFramesSent;
@@ -215,7 +233,12 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 			}
 		} else {
 			if(DataType == DATA_TYPE_AUDIO) {
+				if (!_sharTalkstrue) {
+					endReason = "audio_sender_missing";
+					break;
+				}
 				if(!_sharTalkstrue->write_shar_device(data.get(), header.WdBodyLen)) {
+					endReason = "audio_write_fail";
 					printf("\n%sFailed to write audio data to device", getNowTime().data());
 					break;
 				}
@@ -223,17 +246,15 @@ void CRTPServerEngine::ReadAndAnalyzeRTPPack()
 		}
 	}
 
-	if(m_RtmpSender) {
-		if (videoActive) {
-			struct timeval videoEnd = {};
-			gettimeofday(&videoEnd, nullptr);
-			const double durSec = (videoEnd.tv_sec - videoStart.tv_sec)
-				+ (videoEnd.tv_usec - videoStart.tv_usec) / 1000000.0;
-			printf("\n%svideo session end sim=%s ch=%u dur=%.2fs frames=%d fd=%d\n",
-				getNowTime().data(), m_BCDSIMStr.c_str(), videoChannel, durSec, videoFramesSent, sockFd);
-		}
-		m_RtmpSender->Close();
+	if (videoActive) {
 		m_RtmpSender.reset();
+
+		struct timeval videoEnd = {};
+		gettimeofday(&videoEnd, nullptr);
+		const double durSec = (videoEnd.tv_sec - videoStart.tv_sec)
+			+ (videoEnd.tv_usec - videoStart.tv_usec) / 1000000.0;
+		printf("\n%svideo session end sim=%s ch=%u dur=%.2fs frames=%d fd=%d reason=%s\n",
+			getNowTime().data(), m_BCDSIMStr.c_str(), videoChannel, durSec, videoFramesSent, sockFd, endReason.c_str());
 	}
 }
 
